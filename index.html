@@ -153,6 +153,37 @@
             margin-top: 4px;
         }
         
+        .control-button {
+            width: 100%;
+            padding: 10px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            cursor: pointer;
+            margin-bottom: 8px;
+            transition: background-color 0.2s;
+        }
+        
+        .recalculate-btn {
+            background: #007bff;
+            color: white;
+        }
+        
+        .recalculate-btn:hover {
+            background: #0056b3;
+        }
+        
+        .reset-btn {
+            background: #6c757d;
+            color: white;
+            font-size: 12px;
+            padding: 8px;
+        }
+        
+        .reset-btn:hover {
+            background: #545b62;
+        }
+        
         .total-score {
             background: #e9ecef;
             padding: 10px;
@@ -211,20 +242,18 @@
         <h3>US School Analysis</h3>
         
         <div class="control-group">
-            <label for="tuition-slider">Proposed Tuition: <span id="tuition-value">$50,000</span></label>
-            <input type="range" id="tuition-slider" min="15000" max="80000" step="1000" value="50000" oninput="updateTuitionValue(); updateTractColors();">
+            <label for="tuition-slider">Proposed Tuition: <span id="tuition-value">$40,000</span></label>
+            <input type="range" id="tuition-slider" min="15000" max="80000" step="1000" value="40000" oninput="updateTuitionValue();">
             <div style="display: flex; justify-content: space-between; font-size: 12px; color: #666;">
                 <span>$15K</span>
-                <span>$80K</span>
             </div>
         </div>
         
         <div class="control-group">
             <label for="tuition-scaling-slider">Tuition Scaling Factor: <span id="tuition-scaling-value">25%</span></label>
-            <input type="range" id="tuition-scaling-slider" min="10" max="50" step="5" value="25" oninput="updateTuitionScalingValue(); updateTractColors();">
+            <input type="range" id="tuition-scaling-slider" min="10" max="50" step="5" value="25" oninput="updateTuitionScalingValue();">
             <div style="display: flex; justify-content: space-between; font-size: 12px; color: #666;">
                 <span>10%</span>
-                <span>50%</span>
             </div>
         </div>
         
@@ -233,9 +262,9 @@
             <div class="dual-range-slider">
                 <div class="range-track" id="range-track"></div>
                 <input type="range" id="distance-min-slider" min="1" max="25" step="1" value="5" 
-                       oninput="updateDistanceRange(); updateTractColors();">
+                       oninput="updateDistanceRange();">
                 <input type="range" id="distance-max-slider" min="5" max="30" step="1" value="20" 
-                       oninput="updateDistanceRange(); updateTractColors();">
+                       oninput="updateDistanceRange();">
             </div>
             <div style="display: flex; justify-content: space-between; font-size: 12px; color: #666;">
                 <span>1 mile</span>
@@ -244,6 +273,18 @@
             <div style="font-size: 11px; color: #888; margin-top: 5px;">
                 Min: <span id="distance-min-display">5</span> miles | Max: <span id="distance-max-display">20</span> miles
             </div>
+        </div>
+        
+        <div class="control-group">
+            <button id="recalculate-btn" class="control-button recalculate-btn" onclick="recalculateMap()">Recalculate Map</button>
+            <button id="reset-btn" class="control-button reset-btn" onclick="resetSliders()">Reset to Defaults</button>
+        </div>
+        
+        <div class="control-group">
+            <label>
+                <input type="checkbox" id="show-schools" onchange="toggleSchoolMarkers()"> 
+                Show School Locations
+            </label>
         </div>
         
         <div class="control-group">
@@ -374,7 +415,8 @@
         
         // Initialize map
         function initMap() {
-            map = L.map('map').setView([39.8283, -98.5795], 4); // Center of US
+            // Create map centered on Massachusetts
+            map = L.map('map').setView([42.3601, -71.0589], 8); // Center of Massachusetts
             
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                 attribution: 'OpenStreetMap contributors'
@@ -392,6 +434,16 @@
                 updateTuitionScalingValue();
                 updateDistanceRange();
             }, 100);
+            
+            // Auto-load Massachusetts after state selector is populated
+            setTimeout(function() {
+                loadMassachusetts();
+            }, 300);
+            
+            // Initialize school visibility (unchecked by default)
+            setTimeout(function() {
+                initializeSchoolVisibility();
+            }, 400);
             
             // Update stats
             updateStats();
@@ -558,7 +610,22 @@
                 const layer = L.geoJSON(geojsonData, {
                     style: tractStyle,
                     onEachFeature: onEachTract
-                }).addTo(map);
+                });
+                layer.setStyle(tractStyle);
+                layer.addTo(map);
+                
+                // Apply consistent styling
+                layer.eachLayer(function(sublayer) {
+                    const score = calculateTractScore(sublayer.feature, parseInt(document.getElementById('tuition-slider').value));
+                    const color = getTractColor(score);
+                    sublayer.setStyle({
+                        fillColor: color,
+                        fillOpacity: 0.7,
+                        weight: 1,
+                        opacity: 0.8,
+                        color: '#666'
+                    });
+                });
                 
                 geojsonLayers.set(stateCode, layer);
                 loadedStates.add(stateCode);
@@ -716,7 +783,7 @@
         // Update tract colors based on current parameters
         function updateTractColorsForLoadedStates() {
             const tuitionSlider = document.getElementById('tuition-slider');
-            const tuition = tuitionSlider ? parseInt(tuitionSlider.value) : 50000;
+            const tuition = tuitionSlider ? parseInt(tuitionSlider.value) : 40000;
             
             // Clear cache since parameters changed
             tractScores.clear();
@@ -741,6 +808,88 @@
         // Alias for backward compatibility
         function updateTractColors() {
             updateTractColorsForLoadedStates();
+        }
+        
+        // Recalculate map with current slider values
+        function recalculateMap() {
+            updateTractColorsForLoadedStates();
+        }
+        
+        // Toggle school marker visibility
+        function toggleSchoolMarkers() {
+            const showSchools = document.getElementById('show-schools').checked;
+            
+            if (schoolLayer) {
+                if (showSchools) {
+                    map.addLayer(schoolLayer);
+                } else {
+                    map.removeLayer(schoolLayer);
+                }
+            }
+        }
+        
+        // Initialize school visibility on startup
+        function initializeSchoolVisibility() {
+            // Schools start unchecked, so hide them initially
+            if (schoolLayer && map.hasLayer(schoolLayer)) {
+                map.removeLayer(schoolLayer);
+            }
+        }
+        
+        // Reset sliders to default values
+        function resetSliders() {
+            document.getElementById('tuition-slider').value = 40000;
+            document.getElementById('tuition-scaling-slider').value = 25;
+            document.getElementById('distance-min-slider').value = 5;
+            document.getElementById('distance-max-slider').value = 20;
+            
+            updateTuitionValue();
+            updateTuitionScalingValue();
+            updateDistanceRange();
+        }
+        
+        // Auto-load Massachusetts on startup
+        async function loadMassachusetts() {
+            try {
+                // Wait for state selector to be fully populated
+                await waitForStateSelector();
+                
+                // Check the MA checkbox first
+                const maCheckbox = document.querySelector('input[value="MA"]');
+                if (maCheckbox) {
+                    maCheckbox.checked = true;
+                }
+                
+                // Load MA census tracts
+                await loadStateTracts('MA');
+                
+                // Apply consistent styling after loading
+                setTimeout(() => {
+                    recalculateMap();
+                }, 300);
+                
+                // Update stats
+                updateStats();
+                
+                console.log('Massachusetts loaded automatically on startup');
+            } catch (error) {
+                console.error('Error auto-loading Massachusetts:', error);
+            }
+        }
+        
+        // Wait for state selector to be populated
+        function waitForStateSelector() {
+            return new Promise((resolve) => {
+                const checkSelector = () => {
+                    const maCheckbox = document.querySelector('input[value="MA"]');
+                    if (maCheckbox) {
+                        resolve();
+                    } else {
+                        setTimeout(checkSelector, 50);
+                    }
+                };
+                checkSelector();
+            });
         }
 
         // Update slider display values

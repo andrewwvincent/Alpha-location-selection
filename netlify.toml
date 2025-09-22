@@ -1,0 +1,48 @@
+[build]
+  # No build process needed for static HTML
+  publish = "."
+
+[build.environment]
+  # No special environment variables needed
+
+[[headers]]
+  # Apply headers to all files
+  for = "/*"
+  [headers.values]
+    # Enable CORS for data files
+    Access-Control-Allow-Origin = "*"
+    # Cache static assets
+    Cache-Control = "public, max-age=31536000"
+
+[[headers]]
+  # Special headers for data files
+  for = "*.csv"
+  [headers.values]
+    Content-Type = "text/csv"
+    Access-Control-Allow-Origin = "*"
+
+[[headers]]
+  # Special headers for GeoJSON files
+  for = "*.geojson"
+  [headers.values]
+    Content-Type = "application/geo+json"
+    Access-Control-Allow-Origin = "*"
+
+[[headers]]
+  # Special headers for JavaScript files
+  for = "*.js"
+  [headers.values]
+    Content-Type = "application/javascript"
+    Access-Control-Allow-Origin = "*"
+
+# Redirect rules (if needed)
+[[redirects]]
+  from = "/index.html"
+  to = "/us_national_map.html"
+  status = 301
+
+# Set the main page
+[[redirects]]
+  from = "/"
+  to = "/us_national_map.html"
+  status = 200

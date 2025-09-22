@@ -1,4 +1,43 @@
-# OS generated files
+# Python files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
 .DS_Store
 .DS_Store?
 ._*
@@ -7,19 +46,39 @@
 ehthumbs.db
 Thumbs.db
 
-# IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
+# Large data files (keep only essential ones)
+*.parquet
+*.pkl
+*.pickle
+*.h5
+*.hdf5
+
+# Jupyter notebooks (keep only essential ones)
+.ipynb_checkpoints/
 
 # Logs
 *.log
-npm-debug.log*
 
 # Temporary files
 *.tmp
 *.temp
 
-# Large data files (uncomment if you want to exclude large census files)
-# census_tracts/*.geojson
+# Backup files
+*.bak
+*.backup
+
+# Node modules (if any)
+node_modules/
+
+# Large CSV files (exclude non-essential ones)
+# Keep only the essential data files needed for the web app
+# Exclude large raw data files
+*_raw.csv
+*_backup.csv
+*_old.csv
+
+# Keep these essential files for the web app:
+# - us_national_map.html
+# - us_schools_data.js
+# - acs5_2023_tract_overall.csv
+# - geojson files in geojson/ directory

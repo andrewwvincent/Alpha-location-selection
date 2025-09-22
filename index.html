@@ -288,6 +288,62 @@
         </div>
         
         <div class="control-group">
+            <label>Heatmap Mode:</label>
+            <div style="margin-top: 5px;">
+                <label style="display: block; margin-bottom: 3px;">
+                    <input type="radio" name="heatmap-mode" value="enrollment" checked onchange="switchHeatmapMode()"> 
+                    Enrollment Score
+                </label>
+                <label style="display: block; margin-bottom: 3px;">
+                    <input type="radio" name="heatmap-mode" value="kids500k" onchange="switchHeatmapMode()"> 
+                    Kids >$500k
+                </label>
+                <label style="display: block; margin-bottom: 3px;">
+                    <input type="radio" name="heatmap-mode" value="income" onchange="switchHeatmapMode()"> 
+                    Median Income
+                </label>
+                <label style="display: block; margin-bottom: 3px;">
+                    <input type="radio" name="heatmap-mode" value="homevalue" onchange="switchHeatmapMode()"> 
+                    Median Home Value
+                </label>
+                <label style="display: block; margin-bottom: 3px;">
+                    <input type="radio" name="heatmap-mode" value="composite" onchange="switchHeatmapMode()"> 
+                    Composite Score
+                </label>
+            </div>
+        </div>
+        
+        <div class="legend">
+            <div id="legend-title" style="font-weight: bold; margin-bottom: 8px;">Enrollment Score Legend</div>
+            <div id="legend-items">
+                <div class="legend-item">
+                    <span class="legend-color" style="background: #ff0000;"></span>
+                    <span>5000+ (Excellent)</span>
+                </div>
+                <div class="legend-item">
+                    <span class="legend-color" style="background: #ff8000;"></span>
+                    <span>3000-4999 (Very Good)</span>
+                </div>
+                <div class="legend-item">
+                    <span class="legend-color" style="background: #ffff00;"></span>
+                    <span>2500-2999 (Good)</span>
+                </div>
+                <div class="legend-item">
+                    <span class="legend-color" style="background: #80ff00;"></span>
+                    <span>1500-2499 (Fair)</span>
+                </div>
+                <div class="legend-item">
+                    <span class="legend-color" style="background: #00ff00;"></span>
+                    <span>500-1499 (Moderate)</span>
+                </div>
+                <div class="legend-item">
+                    <span class="legend-color" style="background: #00ffff;"></span>
+                    <span>0-499 (Low)</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="control-group">
             <button id="recalculate-btn" class="control-button recalculate-btn" onclick="recalculateMap()">Recalculate Map</button>
             <button id="reset-btn" class="control-button reset-btn" onclick="resetSliders()">Reset to Defaults</button>
         </div>
@@ -333,41 +389,13 @@
             States: <span id="state-count">0</span>
         </div>
         
-        <div class="legend">
-            <div style="font-weight: bold; margin-bottom: 8px;">Enrollment Score Legend</div>
-            <div class="legend-item">
-                <span class="legend-color" style="background: #ff0000;"></span>
-                <span>5000+ (Excellent)</span>
-            </div>
-            <div class="legend-item">
-                <span class="legend-color" style="background: #ff8000;"></span>
-                <span>3000-4999 (Very Good)</span>
-            </div>
-            <div class="legend-item">
-                <span class="legend-color" style="background: #ffff00;"></span>
-                <span>2500-2999 (Good)</span>
-            </div>
-            <div class="legend-item">
-                <span class="legend-color" style="background: #80ff00;"></span>
-                <span>1500-2499 (Fair)</span>
-            </div>
-            <div class="legend-item">
-                <span class="legend-color" style="background: #00ff00;"></span>
-                <span>500-1499 (Moderate)</span>
-            </div>
-            <div class="legend-item">
-                <span class="legend-color" style="background: #00ffff;"></span>
-                <span>0-499 (Low)</span>
-            </div>
-            
-            <div style="margin-top: 15px;">
-                <div style="font-weight: bold; margin-bottom: 5px;">Instructions</div>
-                <div style="font-size: 11px; color: #666;">
-                    • Select states to load census tract data<br>
-                    • Click census tracts to see school contributions<br>
-                    • School markers: Color = tuition, Size = enrollment<br>
-                    • Change tuition to see market viability
-                </div>
+        <div style="margin-top: 15px;">
+            <div style="font-weight: bold; margin-bottom: 5px;">Instructions</div>
+            <div style="font-size: 11px; color: #666;">
+                • Select states to load census tract data<br>
+                • Click census tracts to see school contributions<br>
+                • School markers: Color = tuition, Size = enrollment<br>
+                • Change tuition to see market viability
             </div>
         </div>
         
@@ -378,12 +406,15 @@
 
     <script>
         let map;
-        let geojsonLayers = new Map(); // Store layers by state
         let schoolLayer;
-        let currentTuition = 50000;
-        let selectedTract = null;
-        let loadedStates = new Set();
-        let tractScores = new Map(); // Cache calculated scores
+        // allSchoolsData is loaded from us_schools_data.js
+        let geojsonLayers = new Map(); // Store layers by state
+        let loadedStates = new Set(); // Track which states are loaded
+        let tractScores = new Map(); // Cache for calculated scores
+        let demographicData = new Map(); // Store demographic data by geoid
+        let currentHeatmapMode = 'enrollment'; // Current visualization mode
+        let currentPercentiles = {}; // Store percentiles for current loaded states
+        let selectedTract = null; // Currently selected tract for highlighting
         
         // US state codes for organization
         const US_STATES = [
@@ -514,7 +545,7 @@
             const visibleStates = getStatesInViewport();
             const currentlyLoaded = Array.from(loadedStates);
             
-            // Load new visible states
+            
             for (const state of visibleStates) {
                 if (!loadedStates.has(state)) {
                     console.log(`Auto-loading state: ${state}`);
@@ -799,8 +830,10 @@
             // Hide loading indicator
             document.getElementById('loading').style.display = 'none';
             
-            // Update stats (no recalculation needed - tracts are already styled during loading)
+            // Update stats and recalculate percentiles for current mode
             updateStats();
+            calculatePercentiles();
+            updateLegend();
         }
         
         // Clear all loaded states
@@ -898,8 +931,8 @@
                         const batch = tractLayers.slice(i, i + batchSize);
                         
                         batch.forEach(sublayer => {
-                            const score = calculateTractScore(sublayer.feature, parseInt(document.getElementById('tuition-slider').value));
-                            const color = getTractColor(score);
+                            const value = getTractValue(sublayer.feature);
+                            const color = getTractColor(value);
                             sublayer.setStyle({
                                 fillColor: color,
                                 fillOpacity: 0.4,
@@ -927,8 +960,8 @@
                 } else {
                     // Small states - process normally without progress bar
                     layer.eachLayer(function(sublayer) {
-                        const score = calculateTractScore(sublayer.feature, parseInt(document.getElementById('tuition-slider').value));
-                        const color = getTractColor(score);
+                        const value = getTractValue(sublayer.feature);
+                        const color = getTractColor(value);
                         sublayer.setStyle({
                             fillColor: color,
                             fillOpacity: 0.4,
@@ -956,20 +989,147 @@
             }
         }
 
-        // Get color based on enrollment score with fixed absolute breakpoints
-        function getTractColor(score) {
-            if (score >= 5000) return '#ff0000';      // Red: 5000+
-            if (score >= 4000) return '#ff4000';      // Red-orange: 4000-4999
-            if (score >= 3000) return '#ff8000';      // Orange: 3000-3999
-            if (score >= 2500) return '#ffff00';      // Yellow: 2500-2999 (key breakpoint)
-            if (score >= 2000) return '#c0ff00';      // Yellow-green: 2000-2499
-            if (score >= 1500) return '#80ff00';      // Light green: 1500-1999
-            if (score >= 1000) return '#40ff00';      // Green: 1000-1499
-            if (score >= 500) return '#00ff00';       // Bright green: 500-999
-            if (score >= 250) return '#00ff40';       // Green-cyan: 250-499
-            if (score >= 100) return '#00ff80';       // Light cyan: 100-249
-            if (score >= 50) return '#00ffc0';        // Cyan: 50-99
-            return '#00ffff';                         // Light blue: 0-49
+        // Get color based on current heatmap mode and value
+        function getTractColor(value, mode = null) {
+            const currentMode = mode || currentHeatmapMode;
+            
+            switch (currentMode) {
+                case 'enrollment':
+                    return getEnrollmentColor(value);
+                case 'kids500k':
+                    return getKids500kColor(value);
+                case 'income':
+                    return getIncomeColor(value);
+                case 'homevalue':
+                    return getHomeValueColor(value);
+                case 'composite':
+                    return getCompositeColor(value);
+                default:
+                    return getEnrollmentColor(value);
+            }
+        }
+        
+        // Get color based on enrollment score with 6 buckets as requested
+        function getEnrollmentColor(score) {
+            if (score >= 5000) return '#ff0000';      // Red: 5000+ (Excellent)
+            if (score >= 3000) return '#ff8000';      // Orange: 3000-4999 (Very Good)
+            if (score >= 2500) return '#ffff00';      // Yellow: 2500-2999 (Good)
+            if (score >= 1500) return '#80ff00';      // Light green: 1500-2499 (Fair)
+            if (score >= 500) return '#00ffff';       // Blue: 500-1499 (Moderate)
+            return 'transparent';                     // Transparent: 0-499 (Low - no color but still clickable)
+        }
+        
+        // Get color based on kids >$500k count
+        function getKids500kColor(count) {
+            if (count >= 100) return '#ff0000';       // Red: 100+
+            if (count >= 50) return '#ff4000';        // Red-orange: 50-99
+            if (count >= 25) return '#ff8000';        // Orange: 25-49
+            if (count >= 15) return '#ffff00';        // Yellow: 15-24
+            if (count >= 10) return '#c0ff00';        // Yellow-green: 10-14
+            if (count >= 7) return '#80ff00';         // Light green: 7-9
+            if (count >= 5) return '#40ff00';         // Green: 5-6
+            if (count >= 3) return '#00ff00';         // Bright green: 3-4
+            if (count >= 2) return '#00ff40';         // Green-cyan: 2
+            if (count >= 1) return '#00ff80';         // Light cyan: 1
+            return '#00ffff';                         // Light blue: 0
+        }
+        
+        // Get color based on median household income using fixed breakpoints
+        function getIncomeColor(income) {
+            if (income >= 200000) return '#ff0000';   // Red: $200k+ (Excellent)
+            if (income >= 150000) return '#ff8000';   // Orange: $150k-199k (Very Good)
+            if (income >= 125000) return '#ffff00';   // Yellow: $125k-149k (Good)
+            if (income >= 100000) return '#80ff00';   // Light green: $100k-124k (Fair)
+            if (income >= 75000) return '#00ffff';    // Blue: $75k-99k (Moderate)
+            return 'transparent';                     // Transparent: <$75k (Low)
+        }
+        
+        // Get color based on median home value using fixed breakpoints
+        function getHomeValueColor(value) {
+            if (value >= 800000) return '#ff0000';    // Red: $800k+ (Excellent)
+            if (value >= 600000) return '#ff8000';    // Orange: $600k-799k (Very Good)
+            if (value >= 450000) return '#ffff00';    // Yellow: $450k-599k (Good)
+            if (value >= 350000) return '#80ff00';    // Light green: $350k-449k (Fair)
+            if (value >= 250000) return '#00ffff';    // Blue: $250k-349k (Moderate)
+            return 'transparent';                     // Transparent: <$250k (Low)
+        }
+        
+        // Get color based on composite score
+        function getCompositeColor(score) {
+            if (score >= 4) return '#ff0000';         // Red: Score 4 (Excellent)
+            if (score >= 3) return '#ff8000';         // Orange: Score 3 (Very Good)
+            if (score >= 2) return '#ffff00';         // Yellow: Score 2 (Good)
+            if (score >= 1) return '#80ff00';         // Light green: Score 1 (Fair)
+            return 'transparent';                     // Transparent: Score 0 (Low)
+        }
+        
+        // Calculate composite score for a tract
+        function calculateCompositeScore(feature) {
+            const geoid = feature.properties.GEOID;
+            
+            // Get individual metric scores (0-5 points each)
+            const tuition = parseInt(document.getElementById('tuition-slider').value);
+            const enrollmentValue = calculateTractScore(feature, tuition);
+            const enrollmentScore = getMetricPoints(enrollmentValue, 'enrollment');
+            
+            // Skip Kids >$500k for now since data isn't available
+            // const kids500kScore = getMetricPoints(demographicData.get(geoid)?.kids500k || 0, 'kids500k');
+            
+            const incomeScore = getMetricPoints(demographicData.get(geoid)?.median_hh_income || 0, 'income');
+            const homeValueScore = getMetricPoints(demographicData.get(geoid)?.median_home_value || 0, 'homevalue');
+            
+            // Total points out of 15 (3 metrics × 5 points)
+            const totalPoints = enrollmentScore + incomeScore + homeValueScore;
+            
+            // Convert to 0-4 scale (adjusted for 3 metrics)
+            if (totalPoints >= 13) return 4;  // Excellent (mostly red) - 13-15 points
+            if (totalPoints >= 10) return 3;  // Very Good (mix red/orange) - 10-12 points  
+            if (totalPoints >= 7) return 2;   // Good (solid yellow+) - 7-9 points
+            if (totalPoints >= 4) return 1;   // Fair - 4-6 points
+            return 0;                          // Low - 0-3 points
+        }
+        
+        // Convert metric value to points (0-5)
+        function getMetricPoints(value, metric) {
+            let color;
+            switch (metric) {
+                case 'enrollment':
+                    color = getEnrollmentColor(value);
+                    break;
+                case 'kids500k':
+                    color = getKids500kColor(value);
+                    break;
+                case 'income':
+                    color = getIncomeColor(value);
+                    break;
+                case 'homevalue':
+                    color = getHomeValueColor(value);
+                    break;
+                default:
+                    return 0;
+            }
+            
+            // Convert color to points
+            if (color === '#ff0000') return 5;      // Red
+            if (color === '#ff8000') return 4;      // Orange
+            if (color === '#ffff00') return 3;      // Yellow
+            if (color === '#80ff00') return 2;      // Light green
+            if (color === '#00ffff') return 1;      // Blue
+            return 0;                               // Transparent or other
+        }
+        
+        // Get color based on percentile position (5 quintiles)
+        function getPercentileColor(value, mode) {
+            if (!currentPercentiles.p0) {
+                return '#cccccc'; // Grey if no percentiles calculated
+            }
+            
+            if (value >= currentPercentiles.p80) return '#ff0000';      // Red: Top 20% (Excellent)
+            if (value >= currentPercentiles.p60) return '#ff8000';      // Orange: 60-80% (Very Good)
+            if (value >= currentPercentiles.p40) return '#ffff00';      // Yellow: 40-60% (Good)
+            if (value >= currentPercentiles.p20) return '#80ff00';      // Light green: 20-40% (Fair)
+            if (value >= currentPercentiles.p0) return '#00ffff';       // Blue: 0-20% (Moderate)
+            return '#cccccc';                                           // Grey: Below minimum
         }
 
         // Get school marker color based on tuition with better visibility
@@ -1103,8 +1263,8 @@
             loadedStates.forEach(state => {
                 if (geojsonLayers.has(state)) {
                     geojsonLayers.get(state).eachLayer(function(layer) {
-                        const score = calculateTractScore(layer.feature, tuition);
-                        const color = getTractColor(score);
+                        const value = getTractValue(layer.feature);
+                        const color = getTractColor(value);
                         layer.setStyle({
                             fillColor: color,
                             fillOpacity: 0.4,
@@ -1216,8 +1376,8 @@
                     
                     // Process batch
                     batch.forEach(tractLayer => {
-                        const score = calculateTractScore(tractLayer.feature, tuition);
-                        const color = getTractColor(score);
+                        const value = getTractValue(tractLayer.feature);
+                        const color = getTractColor(value);
                         
                         tractLayer.setStyle({
                             fillColor: color,
@@ -1337,9 +1497,8 @@
 
         // Style census tracts with borders matching tract color
         function tractStyle(feature) {
-            const tuition = parseInt(document.getElementById('tuition-slider').value);
-            const calculatedScore = calculateTractScore(feature, tuition);
-            const tractColor = getTractColor(calculatedScore);
+            const value = getTractValue(feature);
+            const tractColor = getTractColor(value);
             
             return {
                 fillColor: tractColor,
@@ -1348,6 +1507,37 @@
                 color: tractColor,  // Border color matches tract color for seamless appearance
                 fillOpacity: 0.4
             };
+        }
+        
+        // Get the appropriate value for the current heatmap mode
+        function getTractValue(feature) {
+            const geoid = feature.properties.GEOID;
+            
+            switch (currentHeatmapMode) {
+                case 'enrollment':
+                    const tuition = parseInt(document.getElementById('tuition-slider').value);
+                    return calculateTractScore(feature, tuition);
+                    
+                case 'kids500k':
+                    // Placeholder - will be populated when you provide the data
+                    const demoData = demographicData.get(geoid);
+                    return demoData ? demoData.kids500k : 0;
+                    
+                case 'income':
+                    const incomeData = demographicData.get(geoid);
+                    return incomeData ? incomeData.median_hh_income : 0;
+                    
+                case 'homevalue':
+                    const homeData = demographicData.get(geoid);
+                    return homeData ? homeData.median_home_value : 0;
+                    
+                case 'composite':
+                    return calculateCompositeScore(feature);
+                    
+                default:
+                    const defaultTuition = parseInt(document.getElementById('tuition-slider').value);
+                    return calculateTractScore(feature, defaultTuition);
+            }
         }
         
         // Handle each tract feature (for click events)
@@ -1440,8 +1630,334 @@
         function init() {
             document.getElementById('loading').style.display = 'none';
             initMap();
+            loadDemographicData();
+            updateLegend(); // Initialize legend with current mode
             
             // No longer needed - using sliders instead of dropdown
+        }
+        
+        // Load demographic data from CSV
+        async function loadDemographicData() {
+            try {
+                console.log('Loading demographic data...');
+                const response = await fetch('acs5_2023_tract_overall.csv');
+                const csvText = await response.text();
+                
+                // Parse CSV
+                const lines = csvText.split('\n');
+                const headers = lines[0].split(',');
+                
+                for (let i = 1; i < lines.length; i++) {
+                    const values = lines[i].split(',');
+                    if (values.length >= headers.length) {
+                        const geoid = values[4]; // geoid column
+                        demographicData.set(geoid, {
+                            median_hh_income: parseFloat(values[5]) || 0,
+                            median_home_value: parseFloat(values[7]) || 0,
+                            total_pop: parseFloat(values[9]) || 0,
+                            kids500k: 0 // Placeholder - will be populated later
+                        });
+                    }
+                }
+                
+                console.log(`Loaded demographic data for ${demographicData.size} tracts`);
+            } catch (error) {
+                console.error('Error loading demographic data:', error);
+            }
+        }
+        
+        // Switch heatmap visualization mode
+        function switchHeatmapMode() {
+            const selectedMode = document.querySelector('input[name="heatmap-mode"]:checked').value;
+            currentHeatmapMode = selectedMode;
+            
+            console.log(`Switching to ${selectedMode} heatmap mode`);
+            
+            // Calculate percentiles for current mode and loaded states
+            calculatePercentiles();
+            
+            // Update legend
+            updateLegend();
+            
+            // Recalculate colors for all loaded tracts
+            updateTractColorsForLoadedStates();
+        }
+        
+        // Calculate percentiles for current loaded states and mode
+        function calculatePercentiles() {
+            if (currentHeatmapMode === 'enrollment') {
+                // Enrollment mode uses fixed breakpoints, not percentiles
+                return;
+            }
+            
+            const values = [];
+            
+            // Collect values from all loaded tracts
+            loadedStates.forEach(state => {
+                if (geojsonLayers.has(state)) {
+                    geojsonLayers.get(state).eachLayer(function(layer) {
+                        const geoid = layer.feature.properties.GEOID;
+                        const demoData = demographicData.get(geoid);
+                        
+                        if (demoData) {
+                            let value = 0;
+                            switch (currentHeatmapMode) {
+                                case 'income':
+                                    value = demoData.median_hh_income;
+                                    break;
+                                case 'homevalue':
+                                    value = demoData.median_home_value;
+                                    break;
+                                case 'population':
+                                    value = demoData.total_pop;
+                                    break;
+                                case 'kids500k':
+                                    value = demoData.kids500k;
+                                    break;
+                            }
+                            if (value > 0) values.push(value);
+                        }
+                    });
+                }
+            });
+            
+            if (values.length === 0) {
+                currentPercentiles = {};
+                return;
+            }
+            
+            // Sort values
+            values.sort((a, b) => a - b);
+            
+            // Calculate 5 percentile breakpoints (quintiles: 0%, 20%, 40%, 60%, 80%, 100%)
+            currentPercentiles = {
+                p0: values[0],
+                p20: values[Math.floor(values.length * 0.2)],
+                p40: values[Math.floor(values.length * 0.4)],
+                p60: values[Math.floor(values.length * 0.6)],
+                p80: values[Math.floor(values.length * 0.8)],
+                p100: values[values.length - 1]
+            };
+            
+            console.log(`Percentiles for ${currentHeatmapMode}:`, currentPercentiles);
+        }
+        
+        // Update legend based on current heatmap mode
+        function updateLegend() {
+            const legendTitle = document.getElementById('legend-title');
+            const legendItems = document.getElementById('legend-items');
+            
+            switch (currentHeatmapMode) {
+                case 'enrollment':
+                    legendTitle.textContent = 'Enrollment Score Legend';
+                    legendItems.innerHTML = `
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: #ff0000;"></span>
+                            <span>5000+ (Excellent)</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: #ff8000;"></span>
+                            <span>3000-4999 (Very Good)</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: #ffff00;"></span>
+                            <span>2500-2999 (Good)</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: #80ff00;"></span>
+                            <span>1500-2499 (Fair)</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: #00ffff;"></span>
+                            <span>500-1499 (Moderate)</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: transparent; border: 1px solid #ccc;"></span>
+                            <span>0-499 (Low - No Color)</span>
+                        </div>
+                    `;
+                    break;
+                    
+                case 'kids500k':
+                    legendTitle.textContent = 'Kids >$500k Legend';
+                    // Kids500k uses fixed breakpoints for now
+                    legendItems.innerHTML = `
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: #ff0000;"></span>
+                            <span>100+ (Very High)</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: #ff8000;"></span>
+                            <span>25-99 (High)</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: #ffff00;"></span>
+                            <span>15-24 (Medium-High)</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: #80ff00;"></span>
+                            <span>7-14 (Medium)</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: #00ff00;"></span>
+                            <span>3-6 (Low-Medium)</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: #00ffff;"></span>
+                            <span>0-2 (Low)</span>
+                        </div>
+                    `;
+                    break;
+                    
+                case 'income':
+                    legendTitle.textContent = 'Median Income Legend (Fixed Breakpoints)';
+                    legendItems.innerHTML = `
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: #ff0000;"></span>
+                            <span>$200k+ (Excellent)</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: #ff8000;"></span>
+                            <span>$150k-199k (Very Good)</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: #ffff00;"></span>
+                            <span>$125k-149k (Good)</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: #80ff00;"></span>
+                            <span>$100k-124k (Fair)</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: #00ffff;"></span>
+                            <span>$75k-99k (Moderate)</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: transparent; border: 1px solid #ccc;"></span>
+                            <span>&lt;$75k (Low - No Color)</span>
+                        </div>
+                    `;
+                    break;
+                    
+                case 'homevalue':
+                    legendTitle.textContent = 'Median Home Value Legend (Fixed Breakpoints)';
+                    legendItems.innerHTML = `
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: #ff0000;"></span>
+                            <span>$800k+ (Excellent)</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: #ff8000;"></span>
+                            <span>$600k-799k (Very Good)</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: #ffff00;"></span>
+                            <span>$450k-599k (Good)</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: #80ff00;"></span>
+                            <span>$350k-449k (Fair)</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: #00ffff;"></span>
+                            <span>$250k-349k (Moderate)</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: transparent; border: 1px solid #ccc;"></span>
+                            <span>&lt;$250k (Low - No Color)</span>
+                        </div>
+                    `;
+                    break;
+                    
+                case 'composite':
+                    legendTitle.textContent = 'Composite Score Legend (3 Metrics)';
+                    legendItems.innerHTML = `
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: #ff0000;"></span>
+                            <span>Score 4 (Excellent - 13-15 pts)</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: #ff8000;"></span>
+                            <span>Score 3 (Very Good - 10-12 pts)</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: #ffff00;"></span>
+                            <span>Score 2 (Good - 7-9 pts)</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: #80ff00;"></span>
+                            <span>Score 1 (Fair - 4-6 pts)</span>
+                        </div>
+                        <div class="legend-item">
+                            <span class="legend-color" style="background: transparent; border: 1px solid #ccc;"></span>
+                            <span>Score 0 (Low - 0-3 pts)</span>
+                        </div>
+                        <div style="font-size: 11px; color: #666; margin-top: 8px;">
+                            Currently combines: Enrollment Score + Income + Home Value<br>
+                            <em>Kids >$500k will be added when data is available</em>
+                        </div>
+                    `;
+                    break;
+                    
+                default:
+                    // For other modes - use percentiles if needed
+                    updatePercentileLegend();
+                    break;
+            }
+        }
+        
+        // Update legend with percentile ranges
+        function updatePercentileLegend() {
+            const legendTitle = document.getElementById('legend-title');
+            const legendItems = document.getElementById('legend-items');
+            
+            let title = '';
+            let formatter = (val) => val.toLocaleString();
+            
+            switch (currentHeatmapMode) {
+                case 'income':
+                    title = 'Median Income Legend (Percentiles)';
+                    formatter = (val) => '$' + val.toLocaleString();
+                    break;
+                case 'homevalue':
+                    title = 'Median Home Value Legend (Percentiles)';
+                    formatter = (val) => '$' + val.toLocaleString();
+                    break;
+                case 'population':
+                    title = 'Population Legend (Percentiles)';
+                    formatter = (val) => val.toLocaleString();
+                    break;
+            }
+            
+            legendTitle.textContent = title;
+            
+            if (!currentPercentiles.p0) {
+                legendItems.innerHTML = '<div style="color: #666; font-style: italic;">Load states to see percentile ranges</div>';
+                return;
+            }
+            
+            legendItems.innerHTML = `
+                <div class="legend-item">
+                    <span class="legend-color" style="background: #ff0000;"></span>
+                    <span>${formatter(currentPercentiles.p80)}+ (Top 20% - Excellent)</span>
+                </div>
+                <div class="legend-item">
+                    <span class="legend-color" style="background: #ff8000;"></span>
+                    <span>${formatter(currentPercentiles.p60)} - ${formatter(currentPercentiles.p80)} (60-80% - Very Good)</span>
+                </div>
+                <div class="legend-item">
+                    <span class="legend-color" style="background: #ffff00;"></span>
+                    <span>${formatter(currentPercentiles.p40)} - ${formatter(currentPercentiles.p60)} (40-60% - Good)</span>
+                </div>
+                <div class="legend-item">
+                    <span class="legend-color" style="background: #80ff00;"></span>
+                    <span>${formatter(currentPercentiles.p20)} - ${formatter(currentPercentiles.p40)} (20-40% - Fair)</span>
+                </div>
+                <div class="legend-item">
+                    <span class="legend-color" style="background: #00ffff;"></span>
+                    <span>${formatter(currentPercentiles.p0)} - ${formatter(currentPercentiles.p20)} (Bottom 20% - Moderate)</span>
+                </div>
+            `;
         }
 
         // Start the application

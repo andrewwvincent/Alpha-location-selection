@@ -288,9 +288,9 @@
         </div>
         
         <div class="control-group">
-            <label for="metro-selector">Jump to Metro Area:</label>
-            <select id="metro-selector" onchange="jumpToMetro()">
-                <option value="">Select a metro area...</option>
+            <label for="state-jump-selector">Jump to State:</label>
+            <select id="state-jump-selector" onchange="jumpToState()">
+                <option value="">Select a state...</option>
             </select>
         </div>
         
@@ -428,6 +428,9 @@
             // Populate state selector
             populateStateSelector();
             
+            // Populate state jump selector
+            populateStateJumpSelector();
+            
             // Initialize slider values after a short delay to ensure DOM is ready
             setTimeout(function() {
                 updateTuitionValue();
@@ -498,6 +501,84 @@
             
             if (availableStates.size === 0) {
                 selector.innerHTML = '<div style="color: #999; font-style: italic;">No census tract data files found. Please run organize_census_tracts.py to create state files.</div>';
+            }
+        }
+        
+        // US States for quick navigation (sorted by abbreviation)
+        const usStates = [
+            {abbr: "AK", name: "Alaska", lat: 61.2181, lng: -149.9003},
+            {abbr: "AL", name: "Alabama", lat: 32.3617, lng: -86.2792},
+            {abbr: "AR", name: "Arkansas", lat: 34.7465, lng: -92.2896},
+            {abbr: "AZ", name: "Arizona", lat: 33.4484, lng: -112.0740},
+            {abbr: "CA", name: "California", lat: 36.7783, lng: -119.4179},
+            {abbr: "CO", name: "Colorado", lat: 39.5501, lng: -105.7821},
+            {abbr: "CT", name: "Connecticut", lat: 41.6032, lng: -73.0877},
+            {abbr: "DC", name: "District of Columbia", lat: 38.9072, lng: -77.0369},
+            {abbr: "DE", name: "Delaware", lat: 39.3185, lng: -75.5071},
+            {abbr: "FL", name: "Florida", lat: 27.7663, lng: -81.6868},
+            {abbr: "GA", name: "Georgia", lat: 33.7490, lng: -84.3880},
+            {abbr: "HI", name: "Hawaii", lat: 21.0943, lng: -157.4983},
+            {abbr: "IA", name: "Iowa", lat: 42.0115, lng: -93.2105},
+            {abbr: "ID", name: "Idaho", lat: 44.2405, lng: -114.4788},
+            {abbr: "IL", name: "Illinois", lat: 40.3495, lng: -88.9861},
+            {abbr: "IN", name: "Indiana", lat: 39.8494, lng: -86.2583},
+            {abbr: "KS", name: "Kansas", lat: 38.5266, lng: -96.7265},
+            {abbr: "KY", name: "Kentucky", lat: 37.6681, lng: -84.6701},
+            {abbr: "LA", name: "Louisiana", lat: 31.1695, lng: -91.8678},
+            {abbr: "MA", name: "Massachusetts", lat: 42.2081, lng: -71.0275},
+            {abbr: "MD", name: "Maryland", lat: 39.0639, lng: -76.8021},
+            {abbr: "ME", name: "Maine", lat: 44.6939, lng: -69.3819},
+            {abbr: "MI", name: "Michigan", lat: 43.3266, lng: -84.5361},
+            {abbr: "MN", name: "Minnesota", lat: 45.6945, lng: -93.9002},
+            {abbr: "MO", name: "Missouri", lat: 38.4561, lng: -92.2884},
+            {abbr: "MS", name: "Mississippi", lat: 32.7767, lng: -89.6711},
+            {abbr: "MT", name: "Montana", lat: 47.0527, lng: -110.2140},
+            {abbr: "NC", name: "North Carolina", lat: 35.5397, lng: -79.8431},
+            {abbr: "ND", name: "North Dakota", lat: 47.5289, lng: -99.7840},
+            {abbr: "NE", name: "Nebraska", lat: 41.1254, lng: -98.2681},
+            {abbr: "NH", name: "New Hampshire", lat: 43.4525, lng: -71.5639},
+            {abbr: "NJ", name: "New Jersey", lat: 40.2989, lng: -74.5210},
+            {abbr: "NM", name: "New Mexico", lat: 34.8405, lng: -106.2485},
+            {abbr: "NV", name: "Nevada", lat: 38.3135, lng: -117.0554},
+            {abbr: "NY", name: "New York", lat: 42.1657, lng: -74.9481},
+            {abbr: "OH", name: "Ohio", lat: 40.3888, lng: -82.7649},
+            {abbr: "OK", name: "Oklahoma", lat: 35.5653, lng: -96.9289},
+            {abbr: "OR", name: "Oregon", lat: 44.5672, lng: -122.1269},
+            {abbr: "PA", name: "Pennsylvania", lat: 40.5908, lng: -77.2098},
+            {abbr: "RI", name: "Rhode Island", lat: 41.6809, lng: -71.5118},
+            {abbr: "SC", name: "South Carolina", lat: 33.8569, lng: -80.9450},
+            {abbr: "SD", name: "South Dakota", lat: 44.2998, lng: -99.4388},
+            {abbr: "TN", name: "Tennessee", lat: 35.7478, lng: -86.6923},
+            {abbr: "TX", name: "Texas", lat: 31.0545, lng: -97.5635},
+            {abbr: "UT", name: "Utah", lat: 40.1500, lng: -111.8947},
+            {abbr: "VA", name: "Virginia", lat: 37.7693, lng: -78.1700},
+            {abbr: "VT", name: "Vermont", lat: 44.0459, lng: -72.7107},
+            {abbr: "WA", name: "Washington", lat: 47.4009, lng: -121.4905},
+            {abbr: "WI", name: "Wisconsin", lat: 44.2685, lng: -89.6165},
+            {abbr: "WV", name: "West Virginia", lat: 38.4912, lng: -80.9540},
+            {abbr: "WY", name: "Wyoming", lat: 42.7559, lng: -107.3025}
+        ];
+        
+        // Populate state jump selector
+        function populateStateJumpSelector() {
+            const selector = document.getElementById('state-jump-selector');
+            
+            usStates.forEach(state => {
+                const option = document.createElement('option');
+                option.value = `${state.lat},${state.lng}`;
+                option.textContent = `${state.abbr} - ${state.name}`;
+                selector.appendChild(option);
+            });
+        }
+        
+        // Jump to selected state
+        function jumpToState() {
+            const selector = document.getElementById('state-jump-selector');
+            const value = selector.value;
+            
+            if (value) {
+                const [lat, lng] = value.split(',').map(Number);
+                map.setView([lat, lng], 7);  // State-level zoom
             }
         }
 
@@ -798,7 +879,7 @@
                             fillOpacity: 0.7,
                             weight: 1,
                             opacity: 0.8,
-                            color: '#666'
+                            color: color  // Border color always matches tract color
                         });
                     });
                 }
@@ -947,17 +1028,18 @@
             track.style.width = (maxPercent - minPercent) + '%';
         }
 
-        // Style census tracts
+        // Style census tracts with borders matching tract color
         function tractStyle(feature) {
-            const slider = document.getElementById('tuition-slider');
-            const tuition = slider ? parseInt(slider.value) : 50000; // Default to $50k
+            const tuition = parseInt(document.getElementById('tuition-slider').value);
             const calculatedScore = calculateTractScore(feature, tuition);
+            const tractColor = getTractColor(calculatedScore);
+            
             return {
-                fillColor: getTractColor(calculatedScore),
+                fillColor: tractColor,
                 weight: 1,
                 opacity: 0.8,
-                color: '#666',
-                fillOpacity: 0.4
+                color: tractColor,  // Border color matches tract color for seamless appearance
+                fillOpacity: 0.7
             };
         }
         

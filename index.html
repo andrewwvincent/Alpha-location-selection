@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>US School Location Analysis - National Interactive Map</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="us_schools_data.js"></script>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+        }
+        
+        #map {
+            height: 100vh;
+            width: 100%;
+        }
+        
+        .info-panel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            z-index: 1000;
+            min-width: 300px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+        
+        .info-panel h3 {
+            margin: 0 0 15px 0;
+            color: #333;
+            font-size: 18px;
+        }
+        
+        .control-group {
+            margin-bottom: 15px;
+        }
+        
+        .control-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        
+        .control-group select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        
+        .state-selector {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 5px;
+            max-height: 200px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        
+        .state-checkbox {
+            display: flex;
+            align-items: center;
+            font-size: 12px;
+        }
+        
+        .state-checkbox input {
+            margin-right: 5px;
+        }
+        
+        .tract-details {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #eee;
+            font-size: 14px;
+        }
+        
+        .school-contribution {
+            margin: 8px 0;
+            padding: 8px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            border-left: 4px solid #007bff;
+        }
+        
+        .dual-range-slider {
+            position: relative;
+            height: 6px;
+            background: #ddd;
+            border-radius: 3px;
+            margin: 10px 0;
+        }
+        
+        .dual-range-slider input[type="range"] {
+            position: absolute;
+            width: 100%;
+            height: 6px;
+            background: transparent;
+            pointer-events: none;
+            -webkit-appearance: none;
+            appearance: none;
+        }
+        
+        .dual-range-slider input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            background: #007bff;
+            cursor: pointer;
+            pointer-events: all;
+            border: 2px solid white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .dual-range-slider input[type="range"]::-moz-range-thumb {
+            height: 20px;
+            width: 20px;
+            border-radius: 50%;
+            background: #007bff;
+            cursor: pointer;
+            pointer-events: all;
+            border: 2px solid white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        
+        .range-track {
+            position: absolute;
+            height: 6px;
+            background: #007bff;
+            border-radius: 3px;
+            top: 0;
+        }
+        
+        .school-name {
+            font-weight: bold;
+            color: #333;
+        }
+        
+        .contribution-details {
+            font-size: 12px;
+            color: #666;
+            margin-top: 4px;
+        }
+        
+        .total-score {
+            background: #e9ecef;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            font-weight: bold;
+        }
+        
+        .legend {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #eee;
+        }
+        
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 5px;
+            font-size: 12px;
+        }
+        
+        .legend-color {
+            width: 20px;
+            height: 15px;
+            margin-right: 8px;
+            border: 1px solid #ccc;
+        }
+        
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            z-index: 2000;
+        }
+        
+        .stats {
+            margin-top: 10px;
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading" class="loading">Loading US school analysis data...</div>
+    
+    <div id="map"></div>
+    
+    <div class="info-panel">
+        <h3>US School Analysis</h3>
+        
+        <div class="control-group">
+            <label for="tuition-slider">Proposed Tuition: <span id="tuition-value">$50,000</span></label>
+            <input type="range" id="tuition-slider" min="15000" max="80000" step="1000" value="50000" oninput="updateTuitionValue(); updateTractColors();">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; color: #666;">
+                <span>$15K</span>
+                <span>$80K</span>
+            </div>
+        </div>
+        
+        <div class="control-group">
+            <label for="tuition-scaling-slider">Tuition Scaling Factor: <span id="tuition-scaling-value">25%</span></label>
+            <input type="range" id="tuition-scaling-slider" min="10" max="50" step="5" value="25" oninput="updateTuitionScalingValue(); updateTractColors();">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; color: #666;">
+                <span>10%</span>
+                <span>50%</span>
+            </div>
+        </div>
+        
+        <div class="control-group">
+            <label for="distance-range">Distance Range: <span id="distance-range-value">5-20 miles</span></label>
+            <div class="dual-range-slider">
+                <div class="range-track" id="range-track"></div>
+                <input type="range" id="distance-min-slider" min="1" max="25" step="1" value="5" 
+                       oninput="updateDistanceRange(); updateTractColors();">
+                <input type="range" id="distance-max-slider" min="5" max="30" step="1" value="20" 
+                       oninput="updateDistanceRange(); updateTractColors();">
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 12px; color: #666;">
+                <span>1 mile</span>
+                <span>30 miles</span>
+            </div>
+            <div style="font-size: 11px; color: #888; margin-top: 5px;">
+                Min: <span id="distance-min-display">5</span> miles | Max: <span id="distance-max-display">20</span> miles
+            </div>
+        </div>
+        
+        <div class="control-group">
+            <label for="metro-selector">Jump to Metro Area:</label>
+            <select id="metro-selector" onchange="jumpToMetro()">
+                <option value="">Select a metro area...</option>
+            </select>
+        </div>
+        
+        <div class="control-group">
+            <label for="state-selector">Select States to Load:</label>
+            <div id="state-selector" class="state-selector">
+                <!-- States will be populated here -->
+            </div>
+            <button onclick="loadSelectedStates()" style="margin-top: 10px; padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">Load Selected States</button>
+        </div>
+        
+        <div class="stats" id="stats">
+            <strong>Loaded Data:</strong><br>
+            Schools: <span id="school-count">0</span><br>
+            Census Tracts: <span id="tract-count">0</span><br>
+            States: <span id="state-count">0</span>
+        </div>
+        
+        <div class="legend">
+            <div style="font-weight: bold; margin-bottom: 8px;">Enrollment Score Legend</div>
+            <div class="legend-item">
+                <span class="legend-color" style="background: #ff0000;"></span>
+                <span>5000+ (Excellent)</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-color" style="background: #ff8000;"></span>
+                <span>3000-4999 (Very Good)</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-color" style="background: #ffff00;"></span>
+                <span>2500-2999 (Good)</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-color" style="background: #80ff00;"></span>
+                <span>1500-2499 (Fair)</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-color" style="background: #00ff00;"></span>
+                <span>500-1499 (Moderate)</span>
+            </div>
+            <div class="legend-item">
+                <span class="legend-color" style="background: #00ffff;"></span>
+                <span>0-499 (Low)</span>
+            </div>
+            
+            <div style="margin-top: 15px;">
+                <div style="font-weight: bold; margin-bottom: 5px;">Instructions</div>
+                <div style="font-size: 11px; color: #666;">
+                    • Select states to load census tract data<br>
+                    • Click census tracts to see school contributions<br>
+                    • School markers: Color = tuition, Size = enrollment<br>
+                    • Change tuition to see market viability
+                </div>
+            </div>
+        </div>
+        
+        <div class="tract-details" id="tract-details">
+            <div>Select states above, then click on a census tract to see enrollment score breakdown</div>
+        </div>
+    </div>
+
+    <script>
+        let map;
+        let geojsonLayers = new Map(); // Store layers by state
+        let schoolLayer;
+        let currentTuition = 50000;
+        let selectedTract = null;
+        let loadedStates = new Set();
+        let tractScores = new Map(); // Cache calculated scores
+        
+        // US state codes for organization
+        const US_STATES = [
+            'AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA',
+            'HI', 'ID', 'IL', 'IN', 'IA', 'KS', 'KY', 'LA', 'ME', 'MD',
+            'MA', 'MI', 'MN', 'MS', 'MO', 'MT', 'NE', 'NV', 'NH', 'NJ',
+            'NM', 'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC',
+            'SD', 'TN', 'TX', 'UT', 'VT', 'VA', 'WA', 'WV', 'WI', 'WY'
+        ];
+
+        // Metro areas data (from Metros.csv)
+        const metroAreas = [
+            {name: "AL - Auburn", lat: 32.60805265, lng: -85.48021403},
+            {name: "AL - Birmingham", lat: 33.52041352, lng: -86.81081175},
+            {name: "AL - Huntsville", lat: 34.72910749, lng: -86.58535127},
+            {name: "AR - Fayetteville", lat: 36.06185147, lng: -94.160475},
+            {name: "AR - Little Rock", lat: 34.74928984, lng: -92.27501249},
+            {name: "AZ - Phoenix", lat: 33.45881112, lng: -112.045302},
+            {name: "AZ - Tucson", lat: 32.23496173, lng: -110.9633417},
+            {name: "CA - Los Angeles", lat: 34.01424789, lng: -118.241692},
+            {name: "CA - Sacramento", lat: 38.58258529, lng: -121.4930212},
+            {name: "CA - San Diego", lat: 32.71746703, lng: -117.1626718},
+            {name: "CO - Colorado Springs", lat: 38.83667581, lng: -104.8188904},
+            {name: "CO - Denver", lat: 39.7392634, lng: -104.9933661},
+            {name: "CT - Hartford", lat: 41.76371109, lng: -72.68509259},
+            {name: "FL - Jacksonville", lat: 30.33218085, lng: -81.65565099},
+            {name: "FL - Miami", lat: 25.77481011, lng: -80.19362119},
+            {name: "FL - Orlando", lat: 28.53823972, lng: -81.37924057},
+            {name: "FL - Tampa", lat: 27.94653595, lng: -82.45927932},
+            {name: "GA - Atlanta", lat: 33.74831106, lng: -84.39111311},
+            {name: "IL - Chicago", lat: 41.88415055, lng: -87.63241697},
+            {name: "IN - Indianapolis", lat: 39.76691787, lng: -86.14996716},
+            {name: "MA - Boston", lat: 42.35843106, lng: -71.06281616},
+            {name: "MD - Baltimore", lat: 39.29058148, lng: -76.6108073},
+            {name: "MI - Detroit", lat: 42.33168811, lng: -83.04792957},
+            {name: "MN - Minneapolis", lat: 44.97720941, lng: -93.26499197},
+            {name: "NC - Charlotte", lat: 35.22708834, lng: -80.84312926},
+            {name: "NC - Raleigh", lat: 35.78043077, lng: -78.64001905},
+            {name: "NJ - Newark", lat: 40.73587052, lng: -74.17428944},
+            {name: "NY - New York", lat: 40.71455592, lng: -74.00714636},
+            {name: "OH - Cincinnati", lat: 39.10713046, lng: -84.50413223},
+            {name: "OH - Cleveland", lat: 41.50471256, lng: -81.69074128},
+            {name: "OH - Columbus", lat: 39.96118804, lng: -82.99879438},
+            {name: "PA - Philadelphia", lat: 39.95228964, lng: -75.16522775},
+            {name: "PA - Pittsburgh", lat: 40.44089817, lng: -79.99589536},
+            {name: "TX - Austin", lat: 30.27467051, lng: -97.74026946},
+            {name: "TX - Dallas", lat: 32.78014463, lng: -96.80045665},
+            {name: "TX - Houston", lat: 29.76045894, lng: -95.36980671},
+            {name: "TX - San Antonio", lat: 29.42458803, lng: -98.49629175},
+            {name: "VA - Virginia Beach", lat: 36.85293758, lng: -75.97799451},
+            {name: "WA - Seattle", lat: 47.60356432, lng: -122.3295637}
+        ];
+        
+        // Initialize map
+        function initMap() {
+            map = L.map('map').setView([39.8283, -98.5795], 4); // Center of US
+            
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: 'OpenStreetMap contributors'
+            }).addTo(map);
+            
+            // Create school markers from all US data
+            createSchoolMarkers();
+            
+            // Populate state selector
+            populateStateSelector();
+            
+            // Initialize slider values after a short delay to ensure DOM is ready
+            setTimeout(function() {
+                updateTuitionValue();
+                updateTuitionScalingValue();
+                updateDistanceRange();
+            }, 100);
+            
+            // Update stats
+            updateStats();
+        }
+
+        // Populate state selector checkboxes
+        async function populateStateSelector() {
+            const selector = document.getElementById('state-selector');
+            
+            // Count schools by state
+            const stateCounts = {};
+            allSchoolsData.forEach(school => {
+                stateCounts[school.state] = (stateCounts[school.state] || 0) + 1;
+            });
+            
+            // Check which census tract files are actually available
+            const availableStates = new Set();
+            
+            // Check for available census tract files
+            for (const state of US_STATES) {
+                try {
+                    const response = await fetch(`census_tracts/${state}.geojson`, {method: 'HEAD'});
+                    if (response.ok) {
+                        availableStates.add(state);
+                    }
+                } catch (error) {
+                    // File doesn't exist, skip
+                }
+            }
+            
+            console.log(`Found census tract data for ${availableStates.size} states:`, Array.from(availableStates).sort());
+            
+            US_STATES.forEach(state => {
+                const count = stateCounts[state] || 0;
+                const hasTracts = availableStates.has(state);
+                const div = document.createElement('div');
+                div.className = 'state-checkbox';
+                
+                if (hasTracts) {
+                    div.innerHTML = `
+                        <input type="checkbox" id="state-${state}" value="${state}">
+                        <label for="state-${state}">${state} (${count} schools)</label>
+                    `;
+                } else {
+                    div.innerHTML = `
+                        <input type="checkbox" id="state-${state}" value="${state}" disabled>
+                        <label for="state-${state}" style="color: #999;">${state} (${count} schools) - No tract data</label>
+                    `;
+                }
+                selector.appendChild(div);
+            });
+            
+            if (availableStates.size === 0) {
+                selector.innerHTML = '<div style="color: #999; font-style: italic;">No census tract data files found. Please run organize_census_tracts.py to create state files.</div>';
+            }
+        }
+
+        // Create school markers for all US schools
+        function createSchoolMarkers() {
+            if (schoolLayer) {
+                map.removeLayer(schoolLayer);
+            }
+            
+            const markers = allSchoolsData.map(school => {
+                const radius = Math.max(4, Math.sqrt(school.enrollment) / 2);
+                const marker = L.circleMarker([school.lat, school.lng], {
+                    radius: radius,
+                    fillColor: getSchoolColor(school.tuition),
+                    color: '#000',
+                    weight: 1,
+                    opacity: 1,
+                    fillOpacity: 0.8
+                }).bindPopup(`
+                    <div style="font-size: 14px; max-width: 250px;">
+                        <strong>${school.name}</strong><br>
+                        <strong>City:</strong> ${school.city}, ${school.state}<br>
+                        <strong>Enrollment:</strong> ${school.enrollment}<br>
+                        <strong>Tuition:</strong> $${school.tuition.toLocaleString()}<br>
+                    </div>
+                `);
+                
+                return marker;
+            });
+            
+            schoolLayer = L.layerGroup(markers).addTo(map);
+            
+            // Ensure school markers stay on top
+            schoolLayer.eachLayer(function(marker) {
+                marker.bringToFront();
+            });
+        }
+
+        // Load/unload census tracts for selected states
+        async function loadSelectedStates() {
+            const checkboxes = document.querySelectorAll('#state-selector input[type="checkbox"]');
+            const selectedStates = new Set(Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value));
+            const currentlyLoaded = new Set(loadedStates);
+            
+            // States to load (selected but not loaded)
+            const statesToLoad = [...selectedStates].filter(state => !currentlyLoaded.has(state));
+            
+            // States to unload (loaded but not selected)
+            const statesToUnload = [...currentlyLoaded].filter(state => !selectedStates.has(state));
+            
+            // Unload states first
+            for (const state of statesToUnload) {
+                unloadStateTracts(state);
+            }
+            
+            // Load new states
+            if (statesToLoad.length > 0) {
+                document.getElementById('loading').style.display = 'block';
+                document.getElementById('loading').innerHTML = `Loading ${statesToLoad.length} state(s)...`;
+                
+                for (const state of statesToLoad) {
+                    await loadStateTracts(state);
+                }
+                
+                document.getElementById('loading').style.display = 'none';
+            }
+            
+            updateTractColorsForLoadedStates();
+            updateStats();
+        }
+        
+        // Unload census tracts for a state
+        function unloadStateTracts(state) {
+            if (loadedStates.has(state)) {
+                // Remove tract layers from map
+                if (geojsonLayers.has(state)) {
+                    map.removeLayer(geojsonLayers.get(state));
+                    geojsonLayers.delete(state);
+                }
+                
+                // Remove from loaded states
+                loadedStates.delete(state);
+                
+                // Clear cached scores for this state
+                const keysToDelete = [];
+                for (const key of tractScores.keys()) {
+                    if (key.includes(`_${state}_`)) {
+                        keysToDelete.push(key);
+                    }
+                }
+                keysToDelete.forEach(key => tractScores.delete(key));
+                
+                console.log(`Unloaded ${state} census tracts`);
+            }
+        }
+
+        // Load census tracts for a specific state
+        async function loadStateTracts(stateCode) {
+            try {
+                console.log(`Loading census tracts for ${stateCode}...`);
+                const response = await fetch(`census_tracts/${stateCode}.geojson`);
+                
+                if (!response.ok) {
+                    console.warn(`Census tract data not found for ${stateCode}`);
+                    return;
+                }
+                
+                const geojsonData = await response.json();
+                
+                const layer = L.geoJSON(geojsonData, {
+                    style: tractStyle,
+                    onEachFeature: onEachTract
+                }).addTo(map);
+                
+                geojsonLayers.set(stateCode, layer);
+                loadedStates.add(stateCode);
+                
+                // Ensure school markers stay on top
+                if (schoolLayer) {
+                    schoolLayer.eachLayer(function(marker) {
+                        marker.bringToFront();
+                    });
+                }
+                
+                console.log(`Loaded ${geojsonData.features.length} census tracts for ${stateCode}`);
+                
+            } catch (error) {
+                console.error(`Error loading census tracts for ${stateCode}:`, error);
+            }
+        }
+
+        // Get color based on enrollment score with fixed absolute breakpoints
+        function getTractColor(score) {
+            if (score >= 5000) return '#ff0000';      // Red: 5000+
+            if (score >= 4000) return '#ff4000';      // Red-orange: 4000-4999
+            if (score >= 3000) return '#ff8000';      // Orange: 3000-3999
+            if (score >= 2500) return '#ffff00';      // Yellow: 2500-2999 (key breakpoint)
+            if (score >= 2000) return '#c0ff00';      // Yellow-green: 2000-2499
+            if (score >= 1500) return '#80ff00';      // Light green: 1500-1999
+            if (score >= 1000) return '#40ff00';      // Green: 1000-1499
+            if (score >= 500) return '#00ff00';       // Bright green: 500-999
+            if (score >= 250) return '#00ff40';       // Green-cyan: 250-499
+            if (score >= 100) return '#00ff80';       // Light cyan: 100-249
+            if (score >= 50) return '#00ffc0';        // Cyan: 50-99
+            return '#00ffff';                         // Light blue: 0-49
+        }
+
+        // Get school marker color based on tuition with better visibility
+        function getSchoolColor(tuition) {
+            // Use fixed thresholds for better cross-market comparison
+            if (tuition < 10000) return '#2E8B57';      // Sea Green (low)
+            if (tuition < 20000) return '#32CD32';      // Lime Green
+            if (tuition < 30000) return '#FFD700';      // Gold
+            if (tuition < 40000) return '#FF8C00';      // Dark Orange
+            if (tuition < 50000) return '#FF4500';      // Orange Red
+            if (tuition < 60000) return '#DC143C';      // Crimson
+            return '#8B0000';                           // Dark Red (high)
+        }
+
+        // Calculate enrollment score for a tract
+        function calculateTractScore(tractFeature, tuition) {
+            const cacheKey = `${tractFeature.properties.geoid || tractFeature.properties.GEOID}_${tuition}`;
+            
+            if (tractScores.has(cacheKey)) {
+                return tractScores.get(cacheKey);
+            }
+            
+            const result = calculateSchoolContributions(tractFeature, tuition);
+            const score = result.totalScore;
+            
+            tractScores.set(cacheKey, score);
+            return score;
+        }
+
+        // Calculate school contributions to a census tract
+        function calculateSchoolContributions(tractFeature, proposedTuition) {
+            const centroid = calculateCentroid(tractFeature.geometry.coordinates);
+            const contributions = [];
+            let totalScore = 0;
+
+            allSchoolsData.forEach(school => {
+                const distance = calculateDistance(centroid.lat, centroid.lng, school.lat, school.lng);
+                
+                if (distance <= 20) { // Only consider schools within 20 miles
+                    const distanceScaling = getDistanceScaling(distance);
+                    const tuitionScaling = getTuitionScaling(school.tuition, proposedTuition);
+                    const contribution = school.enrollment * distanceScaling * tuitionScaling;
+                    
+                    if (contribution > 0) {
+                        contributions.push({
+                            school: school,
+                            distance: distance,
+                            distanceScaling: distanceScaling,
+                            tuitionScaling: tuitionScaling,
+                            contribution: contribution
+                        });
+                        totalScore += contribution;
+                    }
+                }
+            });
+
+            contributions.sort((a, b) => b.contribution - a.contribution);
+            return { contributions, totalScore };
+        }
+
+        // Distance and tuition scaling functions (same as Boston version)
+        function calculateDistance(lat1, lng1, lat2, lng2) {
+            const R = 3959; // Earth's radius in miles
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLng = (lng2 - lng1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                     Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                     Math.sin(dLng/2) * Math.sin(dLng/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+
+        function getDistanceScaling(distance) {
+            const minSlider = document.getElementById('distance-min-slider');
+            const maxSlider = document.getElementById('distance-max-slider');
+            
+            if (!minSlider || !maxSlider) {
+                // Fallback to default values if sliders not available
+                const minDistance = 5;
+                const maxDistance = 20;
+                if (distance < minDistance) return 1.0;
+                if (distance > maxDistance) return 0.0;
+                return 1.0 - (distance - minDistance) / (maxDistance - minDistance);
+            }
+            
+            const minDistance = parseInt(minSlider.value);
+            const maxDistance = parseInt(maxSlider.value);
+            
+            if (distance < minDistance) return 1.0;
+            if (distance > maxDistance) return 0.0;
+            return 1.0 - (distance - minDistance) / (maxDistance - minDistance);
+        }
+
+        function getTuitionScaling(schoolTuition, proposedTuition) {
+            if (schoolTuition >= proposedTuition) return 1.0;
+            
+            const slider = document.getElementById('tuition-scaling-slider');
+            const scalingFactor = slider ? parseInt(slider.value) / 100 : 0.25; // Default to 25%
+            const minTuition = proposedTuition * scalingFactor;
+            
+            if (schoolTuition <= minTuition) return 0.0;
+            return (schoolTuition - minTuition) / (proposedTuition - minTuition);
+        }
+
+        function calculateCentroid(coordinates) {
+            let totalLat = 0;
+            let totalLng = 0;
+            let pointCount = 0;
+            
+            const coords = coordinates[0]; // Get the outer ring
+            coords.forEach(coord => {
+                totalLng += coord[0];
+                totalLat += coord[1];
+                pointCount++;
+            });
+            
+            return {
+                lat: totalLat / pointCount,
+                lng: totalLng / pointCount
+            };
+        }
+
+        // Update tract colors based on current parameters
+        function updateTractColorsForLoadedStates() {
+            const tuitionSlider = document.getElementById('tuition-slider');
+            const tuition = tuitionSlider ? parseInt(tuitionSlider.value) : 50000;
+            
+            // Clear cache since parameters changed
+            tractScores.clear();
+            
+            loadedStates.forEach(state => {
+                if (geojsonLayers.has(state)) {
+                    geojsonLayers.get(state).eachLayer(function(layer) {
+                        const score = calculateTractScore(layer.feature, tuition);
+                        const color = getTractColor(score);
+                        layer.setStyle({
+                            fillColor: color,
+                            fillOpacity: 0.7,
+                            weight: 1,
+                            opacity: 0.8,
+                            color: '#666'
+                        });
+                    });
+                }
+            });
+        }
+        
+        // Alias for backward compatibility
+        function updateTractColors() {
+            updateTractColorsForLoadedStates();
+        }
+
+        // Update slider display values
+        function updateTuitionValue() {
+            const slider = document.getElementById('tuition-slider');
+            const display = document.getElementById('tuition-value');
+            if (!slider || !display) return;
+            
+            const value = slider.value;
+            display.textContent = '$' + parseInt(value).toLocaleString();
+        }
+        
+        function updateTuitionScalingValue() {
+            const slider = document.getElementById('tuition-scaling-slider');
+            const display = document.getElementById('tuition-scaling-value');
+            if (!slider || !display) return;
+            
+            const value = slider.value;
+            display.textContent = value + '%';
+        }
+        
+        function updateDistanceRange() {
+            const minSlider = document.getElementById('distance-min-slider');
+            const maxSlider = document.getElementById('distance-max-slider');
+            const rangeDisplay = document.getElementById('distance-range-value');
+            const minDisplay = document.getElementById('distance-min-display');
+            const maxDisplay = document.getElementById('distance-max-display');
+            const track = document.getElementById('range-track');
+            
+            if (!minSlider || !maxSlider || !rangeDisplay || !minDisplay || !maxDisplay || !track) return;
+            
+            let minVal = parseInt(minSlider.value);
+            let maxVal = parseInt(maxSlider.value);
+            
+            // Ensure min <= max
+            if (minVal >= maxVal) {
+                if (minSlider === document.activeElement) {
+                    maxVal = minVal + 1;
+                    maxSlider.value = maxVal;
+                } else {
+                    minVal = maxVal - 1;
+                    minSlider.value = minVal;
+                }
+            }
+            
+            // Update displays
+            rangeDisplay.textContent = `${minVal}-${maxVal} miles`;
+            minDisplay.textContent = minVal;
+            maxDisplay.textContent = maxVal;
+            
+            // Update track visual
+            const minPercent = ((minVal - 1) / (30 - 1)) * 100;
+            const maxPercent = ((maxVal - 1) / (30 - 1)) * 100;
+            track.style.left = minPercent + '%';
+            track.style.width = (maxPercent - minPercent) + '%';
+        }
+
+        // Style census tracts
+        function tractStyle(feature) {
+            const slider = document.getElementById('tuition-slider');
+            const tuition = slider ? parseInt(slider.value) : 50000; // Default to $50k
+            const calculatedScore = calculateTractScore(feature, tuition);
+            return {
+                fillColor: getTractColor(calculatedScore),
+                weight: 1,
+                opacity: 0.8,
+                color: '#666',
+                fillOpacity: 0.4
+            };
+        }
+        
+        // Handle each tract feature (for click events)
+        function onEachTract(feature, layer) {
+            layer.on({
+                click: onTractClick
+            });
+        }
+
+        // Handle tract click events
+        function onTractClick(e) {
+            const feature = e.target.feature;
+            const props = feature.properties;
+            
+            // Reset previous selection
+            if (selectedTract) {
+                selectedTract.setStyle({
+                    weight: 1,
+                    color: '#666',
+                    fillOpacity: 0.4
+                });
+            }
+            
+            // Highlight selected tract
+            e.target.setStyle({
+                weight: 3,
+                color: '#ff0000',
+                fillOpacity: 0.8
+            });
+            selectedTract = e.target;
+            
+            // Calculate school contributions
+            const tuition = parseInt(document.getElementById('tuition-slider').value);
+            const result = calculateSchoolContributions(feature, tuition);
+            displayTractAnalysis(props.geoid || props.GEOID, result, result.totalScore);
+        }
+
+        function displayTractAnalysis(geoid, result, calculatedScore) {
+            const detailsDiv = document.getElementById('tract-details');
+            
+            const tuition = parseInt(document.getElementById('tuition-slider').value);
+            let html = `
+                <div><strong>Census Tract:</strong> ${geoid}</div>
+                <div><strong>Tuition Level:</strong> $${tuition.toLocaleString()}</div>
+                <div class="total-score">
+                    <div>Enrollment Score: ${calculatedScore.toFixed(1)}</div>
+                </div>
+                <div style="margin-top: 15px;"><strong>Top School Contributions:</strong></div>
+            `;
+            
+            if (result.contributions.length === 0) {
+                html += '<div style="color: #666; font-style: italic;">No schools contribute to this tract at this tuition level.</div>';
+            } else {
+                // Show top 10 contributors
+                result.contributions.slice(0, 10).forEach(contrib => {
+                    const percentage = (contrib.contribution / result.totalScore * 100).toFixed(1);
+                    html += `
+                        <div class="school-contribution">
+                            <div class="school-name">${contrib.school.name}</div>
+                            <div class="contribution-details">
+                                ${contrib.school.city}, ${contrib.school.state}<br>
+                                Contribution: ${contrib.contribution.toFixed(1)} (${percentage}%)<br>
+                                Distance: ${contrib.distance.toFixed(1)} miles<br>
+                                Tuition: $${contrib.school.tuition.toLocaleString()}
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                if (result.contributions.length > 10) {
+                    html += `<div style="font-style: italic; color: #666;">...and ${result.contributions.length - 10} more schools</div>`;
+                }
+            }
+            
+            detailsDiv.innerHTML = html;
+        }
+
+        function updateStats() {
+            document.getElementById('school-count').textContent = allSchoolsData.length.toLocaleString();
+            
+            let totalTracts = 0;
+            geojsonLayers.forEach(layer => {
+                layer.eachLayer(() => totalTracts++);
+            });
+            document.getElementById('tract-count').textContent = totalTracts.toLocaleString();
+            document.getElementById('state-count').textContent = loadedStates.size;
+        }
+
+        // Initialize everything
+        function init() {
+            document.getElementById('loading').style.display = 'none';
+            initMap();
+            
+            // No longer needed - using sliders instead of dropdown
+        }
+
+        // Start the application
+        init();
+    </script>
+</body>
+</html>

@@ -236,6 +236,18 @@
 <body>
     <div id="loading" class="loading">Loading US school analysis data...</div>
     
+    <!-- Confirmation dialog for large recalculations -->
+    <div id="confirmation-overlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10000;">
+        <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); max-width: 400px;">
+            <h3 style="margin: 0 0 15px 0; color: #333;">Large Recalculation</h3>
+            <p id="confirmation-message" style="margin: 0 0 15px 0; color: #666; line-height: 1.4;"></p>
+            <div style="text-align: right;">
+                <button onclick="cancelRecalculation()" style="margin-right: 10px; padding: 8px 16px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer;">Cancel</button>
+                <button onclick="proceedWithRecalculation()" style="padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">Recalculate</button>
+            </div>
+        </div>
+    </div>
+    
     <div id="map"></div>
     
     <div class="info-panel">
@@ -280,6 +292,16 @@
             <button id="reset-btn" class="control-button reset-btn" onclick="resetSliders()">Reset to Defaults</button>
         </div>
         
+        <!-- Progress bar for large recalculations -->
+        <div id="progress-container" style="display: none; margin-top: 10px;">
+            <div style="font-size: 12px; margin-bottom: 5px;">
+                <span id="progress-text">Processing tracts...</span>
+            </div>
+            <div style="background: #f0f0f0; border-radius: 10px; overflow: hidden; height: 20px;">
+                <div id="progress-bar" style="background: #007bff; height: 100%; width: 0%; transition: width 0.3s;"></div>
+            </div>
+        </div>
+        
         <div class="control-group">
             <label>
                 <input type="checkbox" id="show-schools" onchange="toggleSchoolMarkers()"> 
@@ -300,7 +322,9 @@
                 <!-- States will be populated here -->
             </div>
             <button onclick="loadSelectedStates()" style="margin-top: 10px; padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">Load Selected States</button>
+            <button onclick="clearAllStates()" style="margin-top: 5px; margin-left: 10px; padding: 8px 16px; background: #dc3545; color: white; border: none; border-radius: 4px; cursor: pointer;">Clear All</button>
         </div>
+        
         
         <div class="stats" id="stats">
             <strong>Loaded Data:</strong><br>
@@ -422,14 +446,20 @@
                 attribution: 'OpenStreetMap contributors'
             }).addTo(map);
             
+            // Viewport tracking disabled to reduce memory usage
+            // map.on('moveend zoomend', function() {
+            //     updateViewportStates();
+            // });
+            
             // Create school markers from all US data
             createSchoolMarkers();
             
-            // Populate state selector
-            populateStateSelector();
             
             // Populate state jump selector
             populateStateJumpSelector();
+            
+            // Populate state selector
+            populateStateSelector();
             
             // Initialize slider values after a short delay to ensure DOM is ready
             setTimeout(function() {
@@ -438,9 +468,15 @@
                 updateDistanceRange();
             }, 100);
             
-            // Auto-load Massachusetts after state selector is populated
+            // Auto-load Massachusetts on startup
             setTimeout(function() {
-                loadMassachusetts();
+                // Check MA checkbox and load it
+                const maCheckbox = document.querySelector('input[value="MA"]');
+                if (maCheckbox) {
+                    maCheckbox.checked = true;
+                    updateLoadButton();
+                    loadStateTracts('MA');
+                }
             }, 300);
             
             // Initialize school visibility (unchecked by default)
@@ -451,58 +487,81 @@
             // Update stats
             updateStats();
         }
-
-        // Populate state selector checkboxes
-        async function populateStateSelector() {
-            const selector = document.getElementById('state-selector');
+        
+        // Viewport-driven state management
+        let isRecalculating = false;
+        
+        // Get states that intersect with current viewport
+        function getStatesInViewport() {
+            const bounds = map.getBounds();
+            const visibleStates = [];
             
-            // Count schools by state
-            const stateCounts = {};
-            allSchoolsData.forEach(school => {
-                stateCounts[school.state] = (stateCounts[school.state] || 0) + 1;
+            usStates.forEach(state => {
+                // Simple bounds check - if state center is within expanded bounds
+                const expandedBounds = bounds.pad(0.2); // Add 20% buffer
+                if (expandedBounds.contains([state.lat, state.lng])) {
+                    visibleStates.push(state.abbr);
+                }
             });
             
-            // Check which census tract files are actually available
-            const availableStates = new Set();
+            return visibleStates;
+        }
+        
+        // Update loaded states based on viewport
+        async function updateViewportStates() {
+            if (isRecalculating) return; // Don't update during recalculation
             
-            // Check for available census tract files
-            for (const state of US_STATES) {
-                try {
-                    const response = await fetch(`census_tracts/${state}.geojson`, {method: 'HEAD'});
-                    if (response.ok) {
-                        availableStates.add(state);
-                    }
-                } catch (error) {
-                    // File doesn't exist, skip
+            const visibleStates = getStatesInViewport();
+            const currentlyLoaded = Array.from(loadedStates);
+            
+            // Load new visible states
+            for (const state of visibleStates) {
+                if (!loadedStates.has(state)) {
+                    console.log(`Auto-loading state: ${state}`);
+                    await loadStateTracts(state);
                 }
             }
             
-            console.log(`Found census tract data for ${availableStates.size} states:`, Array.from(availableStates).sort());
+            // Unload distant states (keep a buffer)
+            const bounds = map.getBounds();
+            const expandedBounds = bounds.pad(0.5); // Larger buffer for unloading
             
-            US_STATES.forEach(state => {
-                const count = stateCounts[state] || 0;
-                const hasTracts = availableStates.has(state);
-                const div = document.createElement('div');
-                div.className = 'state-checkbox';
-                
-                if (hasTracts) {
-                    div.innerHTML = `
-                        <input type="checkbox" id="state-${state}" value="${state}">
-                        <label for="state-${state}">${state} (${count} schools)</label>
-                    `;
-                } else {
-                    div.innerHTML = `
-                        <input type="checkbox" id="state-${state}" value="${state}" disabled>
-                        <label for="state-${state}" style="color: #999;">${state} (${count} schools) - No tract data</label>
-                    `;
+            for (const state of currentlyLoaded) {
+                const stateData = usStates.find(s => s.abbr === state);
+                if (stateData && !expandedBounds.contains([stateData.lat, stateData.lng])) {
+                    console.log(`Auto-unloading distant state: ${state}`);
+                    unloadState(state);
                 }
-                selector.appendChild(div);
-            });
+            }
             
-            if (availableStates.size === 0) {
-                selector.innerHTML = '<div style="color: #999; font-style: italic;">No census tract data files found. Please run organize_census_tracts.py to create state files.</div>';
+            updateStats();
+        }
+        
+        // Unload a state's census tracts
+        function unloadState(stateCode) {
+            if (loadedStates.has(stateCode)) {
+                // Remove tract layers from map
+                if (geojsonLayers.has(stateCode)) {
+                    map.removeLayer(geojsonLayers.get(stateCode));
+                    geojsonLayers.delete(stateCode);
+                }
+                
+                // Remove from loaded states
+                loadedStates.delete(stateCode);
+                
+                // Clear cached scores for this state
+                const keysToDelete = [];
+                for (const key of tractScores.keys()) {
+                    if (key.includes(`_${stateCode}_`)) {
+                        keysToDelete.push(key);
+                    }
+                }
+                keysToDelete.forEach(key => tractScores.delete(key));
+                
+                console.log(`Auto-unloaded ${stateCode} census tracts`);
             }
         }
+
         
         // US States for quick navigation (sorted by abbreviation)
         const usStates = [
@@ -559,6 +618,61 @@
             {abbr: "WY", name: "Wyoming", lat: 42.7559, lng: -107.3025}
         ];
         
+        // State neighbors mapping for smart loading
+        const stateNeighbors = {
+            'AL': ['FL', 'GA', 'MS', 'TN'],
+            'AK': [], // No neighbors
+            'AZ': ['CA', 'CO', 'NM', 'NV', 'UT'],
+            'AR': ['LA', 'MO', 'MS', 'OK', 'TN', 'TX'],
+            'CA': ['AZ', 'NV', 'OR'],
+            'CO': ['AZ', 'KS', 'NE', 'NM', 'OK', 'UT', 'WY'],
+            'CT': ['MA', 'NY', 'RI'],
+            'DE': ['MD', 'NJ', 'PA'],
+            'FL': ['AL', 'GA'],
+            'GA': ['AL', 'FL', 'NC', 'SC', 'TN'],
+            'HI': [], // No neighbors
+            'ID': ['MT', 'NV', 'OR', 'UT', 'WA', 'WY'],
+            'IL': ['IN', 'IA', 'KY', 'MO', 'WI'],
+            'IN': ['IL', 'KY', 'MI', 'OH'],
+            'IA': ['IL', 'MN', 'MO', 'NE', 'SD', 'WI'],
+            'KS': ['CO', 'MO', 'NE', 'OK'],
+            'KY': ['IL', 'IN', 'MO', 'OH', 'TN', 'VA', 'WV'],
+            'LA': ['AR', 'MS', 'TX'],
+            'ME': ['NH'],
+            'MD': ['DE', 'PA', 'VA', 'WV', 'DC'],
+            'MA': ['CT', 'NH', 'NY', 'RI', 'VT'],
+            'MI': ['IN', 'OH', 'WI'],
+            'MN': ['IA', 'ND', 'SD', 'WI'],
+            'MS': ['AL', 'AR', 'LA', 'TN'],
+            'MO': ['AR', 'IL', 'IA', 'KS', 'KY', 'NE', 'OK', 'TN'],
+            'MT': ['ID', 'ND', 'SD', 'WY'],
+            'NE': ['CO', 'IA', 'KS', 'MO', 'SD', 'WY'],
+            'NV': ['AZ', 'CA', 'ID', 'OR', 'UT'],
+            'NH': ['MA', 'ME', 'VT'],
+            'NJ': ['DE', 'NY', 'PA'],
+            'NM': ['AZ', 'CO', 'OK', 'TX', 'UT'],
+            'NY': ['CT', 'MA', 'NJ', 'PA', 'VT'],
+            'NC': ['GA', 'SC', 'TN', 'VA'],
+            'ND': ['MN', 'MT', 'SD'],
+            'OH': ['IN', 'KY', 'MI', 'PA', 'WV'],
+            'OK': ['AR', 'CO', 'KS', 'MO', 'NM', 'TX'],
+            'OR': ['CA', 'ID', 'NV', 'WA'],
+            'PA': ['DE', 'MD', 'NJ', 'NY', 'OH', 'WV'],
+            'RI': ['CT', 'MA'],
+            'SC': ['GA', 'NC'],
+            'SD': ['IA', 'MN', 'MT', 'NE', 'ND', 'WY'],
+            'TN': ['AL', 'AR', 'GA', 'KY', 'MO', 'MS', 'NC', 'VA'],
+            'TX': ['AR', 'LA', 'NM', 'OK'],
+            'UT': ['AZ', 'CO', 'ID', 'NV', 'NM', 'WY'],
+            'VT': ['MA', 'NH', 'NY'],
+            'VA': ['KY', 'MD', 'NC', 'TN', 'WV', 'DC'],
+            'WA': ['ID', 'OR'],
+            'WV': ['KY', 'MD', 'OH', 'PA', 'VA'],
+            'WI': ['IL', 'IA', 'MI', 'MN'],
+            'WY': ['CO', 'ID', 'MT', 'NE', 'SD', 'UT'],
+            'DC': ['MD', 'VA']
+        };
+        
         // Populate state jump selector
         function populateStateJumpSelector() {
             const selector = document.getElementById('state-jump-selector');
@@ -571,15 +685,140 @@
             });
         }
         
-        // Jump to selected state
-        function jumpToState() {
+        // Jump to selected state and load it
+        async function jumpToState() {
             const selector = document.getElementById('state-jump-selector');
             const value = selector.value;
             
             if (value) {
                 const [lat, lng] = value.split(',').map(Number);
+                
+                // Get the state abbreviation from the selector text
+                const selectedOption = selector.options[selector.selectedIndex];
+                const stateAbbr = selectedOption.textContent.split(' - ')[0];
+                
+                // Jump to the state
                 map.setView([lat, lng], 7);  // State-level zoom
+                
+                // Load the state if not already loaded
+                if (!loadedStates.has(stateAbbr)) {
+                    console.log(`Auto-loading ${stateAbbr} after jump`);
+                    
+                    // Show loading indicator
+                    document.getElementById('loading').style.display = 'block';
+                    document.getElementById('loading').innerHTML = `Loading ${stateAbbr}...`;
+                    
+                    await loadStateTracts(stateAbbr);
+                    
+                    // Hide loading indicator
+                    document.getElementById('loading').style.display = 'none';
+                    
+                    // Check the checkbox for this state
+                    const checkbox = document.querySelector(`input[value="${stateAbbr}"]`);
+                    if (checkbox) {
+                        checkbox.checked = true;
+                        updateLoadButton();
+                    }
+                    
+                    // Update stats (no recalculation needed - tracts are already styled during loading)
+                    updateStats();
+                }
+                
+                // Reset selector
+                selector.value = '';
             }
+        }
+        
+        // Populate state selector checkboxes
+        function populateStateSelector() {
+            const selector = document.getElementById('state-selector');
+            
+            // Count schools by state
+            const stateCounts = {};
+            allSchoolsData.forEach(school => {
+                stateCounts[school.state] = (stateCounts[school.state] || 0) + 1;
+            });
+            
+            // Create checkboxes for each state (sorted alphabetically)
+            usStates.forEach(state => {
+                const count = stateCounts[state.abbr] || 0;
+                const div = document.createElement('div');
+                div.innerHTML = `
+                    <label>
+                        <input type="checkbox" value="${state.abbr}" onchange="updateLoadButton()">
+                        ${state.abbr} - ${state.name} (${count} schools)
+                    </label>
+                `;
+                selector.appendChild(div);
+            });
+        }
+        
+        // Update load button text based on selected states
+        function updateLoadButton() {
+            const checkboxes = document.querySelectorAll('#state-selector input[type="checkbox"]:checked');
+            const button = document.querySelector('button[onclick="loadSelectedStates()"]');
+            
+            if (checkboxes.length === 0) {
+                button.textContent = 'Load Selected States';
+            } else {
+                button.textContent = `Load ${checkboxes.length} Selected State${checkboxes.length > 1 ? 's' : ''}`;
+            }
+        }
+        
+        // Load selected states
+        async function loadSelectedStates() {
+            const checkboxes = document.querySelectorAll('#state-selector input[type="checkbox"]:checked');
+            const selectedStates = Array.from(checkboxes).map(cb => cb.value);
+            const currentlyLoaded = Array.from(loadedStates);
+            
+            if (selectedStates.length === 0) {
+                alert('Please select at least one state to load.');
+                return;
+            }
+            
+            console.log(`Managing states - Selected: ${selectedStates.length}, Currently loaded: ${currentlyLoaded.length}`);
+            
+            // Show loading indicator
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('loading').innerHTML = `Updating ${selectedStates.length} state(s)...`;
+            
+            // First, unload states that are loaded but not selected
+            const statesToUnload = currentlyLoaded.filter(state => !selectedStates.includes(state));
+            for (const state of statesToUnload) {
+                console.log(`Unloading unchecked state: ${state}`);
+                unloadState(state);
+            }
+            
+            // Then, load states that are selected but not loaded
+            const statesToLoad = selectedStates.filter(state => !loadedStates.has(state));
+            for (const state of statesToLoad) {
+                console.log(`Loading new state: ${state}`);
+                await loadStateTracts(state);
+            }
+            
+            // Hide loading indicator
+            document.getElementById('loading').style.display = 'none';
+            
+            // Update stats (no recalculation needed - tracts are already styled during loading)
+            updateStats();
+        }
+        
+        // Clear all loaded states
+        function clearAllStates() {
+            // Remove all layers
+            geojsonLayers.forEach((layer, state) => {
+                map.removeLayer(layer);
+            });
+            
+            // Clear data structures
+            geojsonLayers.clear();
+            loadedStates.clear();
+            tractScores.clear();
+            
+            // Update stats
+            updateStats();
+            
+            console.log('All states cleared');
         }
 
         // Create school markers for all US schools
@@ -617,63 +856,7 @@
             });
         }
 
-        // Load/unload census tracts for selected states
-        async function loadSelectedStates() {
-            const checkboxes = document.querySelectorAll('#state-selector input[type="checkbox"]');
-            const selectedStates = new Set(Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value));
-            const currentlyLoaded = new Set(loadedStates);
-            
-            // States to load (selected but not loaded)
-            const statesToLoad = [...selectedStates].filter(state => !currentlyLoaded.has(state));
-            
-            // States to unload (loaded but not selected)
-            const statesToUnload = [...currentlyLoaded].filter(state => !selectedStates.has(state));
-            
-            // Unload states first
-            for (const state of statesToUnload) {
-                unloadStateTracts(state);
-            }
-            
-            // Load new states
-            if (statesToLoad.length > 0) {
-                document.getElementById('loading').style.display = 'block';
-                document.getElementById('loading').innerHTML = `Loading ${statesToLoad.length} state(s)...`;
-                
-                for (const state of statesToLoad) {
-                    await loadStateTracts(state);
-                }
-                
-                document.getElementById('loading').style.display = 'none';
-            }
-            
-            updateTractColorsForLoadedStates();
-            updateStats();
-        }
         
-        // Unload census tracts for a state
-        function unloadStateTracts(state) {
-            if (loadedStates.has(state)) {
-                // Remove tract layers from map
-                if (geojsonLayers.has(state)) {
-                    map.removeLayer(geojsonLayers.get(state));
-                    geojsonLayers.delete(state);
-                }
-                
-                // Remove from loaded states
-                loadedStates.delete(state);
-                
-                // Clear cached scores for this state
-                const keysToDelete = [];
-                for (const key of tractScores.keys()) {
-                    if (key.includes(`_${state}_`)) {
-                        keysToDelete.push(key);
-                    }
-                }
-                keysToDelete.forEach(key => tractScores.delete(key));
-                
-                console.log(`Unloaded ${state} census tracts`);
-            }
-        }
 
         // Load census tracts for a specific state
         async function loadStateTracts(stateCode) {
@@ -695,18 +878,66 @@
                 layer.setStyle(tractStyle);
                 layer.addTo(map);
                 
-                // Apply consistent styling
-                layer.eachLayer(function(sublayer) {
-                    const score = calculateTractScore(sublayer.feature, parseInt(document.getElementById('tuition-slider').value));
-                    const color = getTractColor(score);
-                    sublayer.setStyle({
-                        fillColor: color,
-                        fillOpacity: 0.7,
-                        weight: 1,
-                        opacity: 0.8,
-                        color: '#666'
+                // Apply consistent styling with progress bar for large states
+                const tractLayers = layer.getLayers();
+                const tractCount = tractLayers.length;
+                
+                if (tractCount > 1000) {
+                    // Show progress bar for large states
+                    const progressContainer = document.getElementById('progress-container');
+                    const progressBar = document.getElementById('progress-bar');
+                    const progressText = document.getElementById('progress-text');
+                    
+                    progressContainer.style.display = 'block';
+                    progressBar.style.width = '0%';
+                    progressText.textContent = `Styling ${stateCode} tracts...`;
+                    
+                    // Process in batches with progress updates
+                    const batchSize = 200;
+                    for (let i = 0; i < tractLayers.length; i += batchSize) {
+                        const batch = tractLayers.slice(i, i + batchSize);
+                        
+                        batch.forEach(sublayer => {
+                            const score = calculateTractScore(sublayer.feature, parseInt(document.getElementById('tuition-slider').value));
+                            const color = getTractColor(score);
+                            sublayer.setStyle({
+                                fillColor: color,
+                                fillOpacity: 0.4,
+                                weight: 1,
+                                opacity: 0.8,
+                                color: color  // Border color matches tract color
+                            });
+                        });
+                        
+                        // Update progress
+                        const progress = ((i + batchSize) / tractLayers.length) * 100;
+                        progressBar.style.width = Math.min(progress, 100) + '%';
+                        progressText.textContent = `Styling ${stateCode} tracts... (${Math.round(Math.min(progress, 100))}%)`;
+                        
+                        // Yield to UI every batch
+                        if (i + batchSize < tractLayers.length) {
+                            await new Promise(resolve => setTimeout(resolve, 10));
+                        }
+                    }
+                    
+                    // Hide progress bar
+                    setTimeout(() => {
+                        progressContainer.style.display = 'none';
+                    }, 500);
+                } else {
+                    // Small states - process normally without progress bar
+                    layer.eachLayer(function(sublayer) {
+                        const score = calculateTractScore(sublayer.feature, parseInt(document.getElementById('tuition-slider').value));
+                        const color = getTractColor(score);
+                        sublayer.setStyle({
+                            fillColor: color,
+                            fillOpacity: 0.4,
+                            weight: 1,
+                            opacity: 0.8,
+                            color: color  // Border color matches tract color
+                        });
                     });
-                });
+                }
                 
                 geojsonLayers.set(stateCode, layer);
                 loadedStates.add(stateCode);
@@ -876,7 +1107,7 @@
                         const color = getTractColor(score);
                         layer.setStyle({
                             fillColor: color,
-                            fillOpacity: 0.7,
+                            fillOpacity: 0.4,
                             weight: 1,
                             opacity: 0.8,
                             color: color  // Border color always matches tract color
@@ -893,7 +1124,126 @@
         
         // Recalculate map with current slider values
         function recalculateMap() {
-            updateTractColorsForLoadedStates();
+            const totalTracts = getTotalLoadedTracts();
+            
+            // Show confirmation dialog for large recalculations
+            if (totalTracts > 5000) {
+                showRecalculationConfirmation(totalTracts);
+            } else {
+                performRecalculation();
+            }
+        }
+        
+        // Get total number of loaded tracts
+        function getTotalLoadedTracts() {
+            let total = 0;
+            geojsonLayers.forEach(layer => {
+                layer.eachLayer(() => total++);
+            });
+            return total;
+        }
+        
+        // Show confirmation dialog for large recalculations
+        function showRecalculationConfirmation(tractCount) {
+            const estimatedTime = Math.ceil(tractCount / 1000) * 2; // Rough estimate: 2 seconds per 1000 tracts
+            const stateCount = loadedStates.size;
+            
+            document.getElementById('confirmation-message').innerHTML = `
+                Recalculate <strong>${tractCount.toLocaleString()}</strong> tracts across <strong>${stateCount}</strong> states?<br>
+                <small style="color: #888;">Estimated time: ${estimatedTime}-${estimatedTime + 5} seconds</small>
+            `;
+            document.getElementById('confirmation-overlay').style.display = 'block';
+        }
+        
+        // Cancel recalculation
+        function cancelRecalculation() {
+            document.getElementById('confirmation-overlay').style.display = 'none';
+        }
+        
+        // Proceed with recalculation
+        function proceedWithRecalculation() {
+            document.getElementById('confirmation-overlay').style.display = 'none';
+            performRecalculation();
+        }
+        
+        // Perform the actual recalculation with progress bar
+        async function performRecalculation() {
+            isRecalculating = true;
+            
+            const totalTracts = getTotalLoadedTracts();
+            if (totalTracts > 2000) {
+                await performBatchedRecalculation();
+            } else {
+                updateTractColorsForLoadedStates();
+            }
+            
+            isRecalculating = false;
+        }
+        
+        // Perform batched recalculation with progress bar
+        async function performBatchedRecalculation() {
+            const progressContainer = document.getElementById('progress-container');
+            const progressBar = document.getElementById('progress-bar');
+            const progressText = document.getElementById('progress-text');
+            
+            progressContainer.style.display = 'block';
+            progressBar.style.width = '0%';
+            
+            const tuitionSlider = document.getElementById('tuition-slider');
+            const tuition = tuitionSlider ? parseInt(tuitionSlider.value) : 40000;
+            
+            // Clear cache since parameters changed
+            tractScores.clear();
+            
+            let processedTracts = 0;
+            let totalTracts = 0;
+            
+            // Count total tracts
+            geojsonLayers.forEach(layer => {
+                layer.eachLayer(() => totalTracts++);
+            });
+            
+            // Process each state in batches
+            for (const [stateName, layer] of geojsonLayers.entries()) {
+                progressText.textContent = `Processing ${stateName}...`;
+                
+                const stateTractCount = layer.getLayers().length;
+                const batchSize = Math.min(500, stateTractCount); // Process in chunks of 500
+                const tractLayers = layer.getLayers();
+                
+                for (let i = 0; i < tractLayers.length; i += batchSize) {
+                    const batch = tractLayers.slice(i, i + batchSize);
+                    
+                    // Process batch
+                    batch.forEach(tractLayer => {
+                        const score = calculateTractScore(tractLayer.feature, tuition);
+                        const color = getTractColor(score);
+                        
+                        tractLayer.setStyle({
+                            fillColor: color,
+                            fillOpacity: 0.4,
+                            weight: 1,
+                            opacity: 0.8,
+                            color: color
+                        });
+                        
+                        processedTracts++;
+                    });
+                    
+                    // Update progress
+                    const progress = (processedTracts / totalTracts) * 100;
+                    progressBar.style.width = progress + '%';
+                    progressText.textContent = `Processing ${stateName}... (${Math.round(progress)}%)`;
+                    
+                    // Yield to UI
+                    await new Promise(resolve => setTimeout(resolve, 10));
+                }
+            }
+            
+            progressText.textContent = 'Complete!';
+            setTimeout(() => {
+                progressContainer.style.display = 'none';
+            }, 1000);
         }
         
         // Toggle school marker visibility
@@ -929,49 +1279,6 @@
             updateDistanceRange();
         }
         
-        // Auto-load Massachusetts on startup
-        async function loadMassachusetts() {
-            try {
-                // Wait for state selector to be fully populated
-                await waitForStateSelector();
-                
-                // Check the MA checkbox first
-                const maCheckbox = document.querySelector('input[value="MA"]');
-                if (maCheckbox) {
-                    maCheckbox.checked = true;
-                }
-                
-                // Load MA census tracts
-                await loadStateTracts('MA');
-                
-                // Apply consistent styling after loading
-                setTimeout(() => {
-                    recalculateMap();
-                }, 300);
-                
-                // Update stats
-                updateStats();
-                
-                console.log('Massachusetts loaded automatically on startup');
-            } catch (error) {
-                console.error('Error auto-loading Massachusetts:', error);
-            }
-        }
-        
-        // Wait for state selector to be populated
-        function waitForStateSelector() {
-            return new Promise((resolve) => {
-                const checkSelector = () => {
-                    const maCheckbox = document.querySelector('input[value="MA"]');
-                    if (maCheckbox) {
-                        resolve();
-                    } else {
-                        setTimeout(checkSelector, 50);
-                    }
-                };
-                checkSelector();
-            });
-        }
 
         // Update slider display values
         function updateTuitionValue() {
@@ -1039,7 +1346,7 @@
                 weight: 1,
                 opacity: 0.8,
                 color: tractColor,  // Border color matches tract color for seamless appearance
-                fillOpacity: 0.7
+                fillOpacity: 0.4
             };
         }
         

@@ -255,7 +255,7 @@
         
         <div class="control-group">
             <label for="tuition-slider">Proposed Tuition: <span id="tuition-value">$40,000</span></label>
-            <input type="range" id="tuition-slider" min="20000" max="75000" value="40000" step="5000" oninput="updateTuitionValue(); refreshMapColors();">
+            <input type="range" id="tuition-slider" min="20000" max="75000" value="40000" step="5000" oninput="updateTuitionValue();">
         </div>
         
         <div class="control-group">
@@ -1600,6 +1600,20 @@
                 click: onTractClick
             });
         }
+        
+        // Get tract style based on current heatmap mode
+        function getTractStyle(feature) {
+            const value = getTractValue(feature);
+            const color = getTractColor(value);
+            
+            return {
+                fillColor: color,
+                weight: 1,
+                opacity: 1,
+                color: '#666',
+                fillOpacity: 0.4
+            };
+        }
 
         // Handle tract click events
         function onTractClick(e) {
@@ -1623,6 +1637,7 @@
             // Create popup with tract information
             const tuition = parseInt(document.getElementById('tuition-slider').value);
             const enrollmentScore = calculateTractScore(feature, tuition);
+            const enrollmentContributions = calculateSchoolContributions(feature, tuition);
             const demoData = demographicData.get(geoid);
             const income = demoData ? demoData.median_hh_income : 0;
             const homeValue = demoData ? demoData.median_home_value : 0;
@@ -1643,8 +1658,27 @@
             const homeValueColor = getHomeValueColor(homeValue);
             const compositeColor = getCompositeColor(compositeScore);
             
+            // Create enrollment breakdown
+            let enrollmentBreakdown = '';
+            if (enrollmentContributions.contributions && enrollmentContributions.contributions.length > 0) {
+                const topSchools = enrollmentContributions.contributions
+                    .sort((a, b) => b.contribution - a.contribution)
+                    .slice(0, 5); // Show top 5 contributing schools
+                
+                enrollmentBreakdown = `
+                    <div style="margin-top: 8px; padding-top: 6px; border-top: 1px solid #eee;">
+                        <div style="font-weight: bold; margin-bottom: 4px; font-size: 10px;">Top Contributing Schools:</div>
+                        ${topSchools.map(contrib => `
+                            <div style="font-size: 9px; margin-bottom: 1px;">
+                                • ${contrib.school.name} (${contrib.school.city}): +${contrib.contribution.toFixed(0)}
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+            
             const popupContent = `
-                <div style="min-width: 250px;">
+                <div style="min-width: 280px;">
                     <h4 style="margin: 0 0 10px 0; color: #333;">📊 Census Tract Analysis</h4>
                     <div style="font-size: 11px; margin-bottom: 8px; color: #888;">Tract: ${geoid}</div>
                     
@@ -1671,6 +1705,7 @@
                             <span style="display: inline-block; width: 10px; height: 10px; background: ${homeValueColor}; border: 1px solid #ccc; margin-right: 6px;"></span>
                             Home Value: $${homeValue.toLocaleString()}
                         </div>
+                        ${enrollmentBreakdown}
                     </div>
                 </div>
             `;
@@ -1781,22 +1816,19 @@
                     updateMultiplierDisplays();
                 }
                 
-                // Refresh map colors
-                refreshMapColors();
+                // Map will be refreshed when user clicks Recalculate button
             });
             
             // Income multiplier slider
             document.getElementById('income-multiplier').addEventListener('input', function() {
                 incomeMultiplier = parseFloat(this.value);
                 updateMultiplierDisplays();
-                refreshMapColors();
             });
             
             // Home value multiplier slider  
             document.getElementById('home-multiplier').addEventListener('input', function() {
                 homeValueMultiplier = parseFloat(this.value);
                 updateMultiplierDisplays();
-                refreshMapColors();
             });
         }
         

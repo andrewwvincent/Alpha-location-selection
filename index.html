@@ -255,9 +255,28 @@
         
         <div class="control-group">
             <label for="tuition-slider">Proposed Tuition: <span id="tuition-value">$40,000</span></label>
-            <input type="range" id="tuition-slider" min="15000" max="80000" step="1000" value="40000" oninput="updateTuitionValue();">
-            <div style="display: flex; justify-content: space-between; font-size: 12px; color: #666;">
-                <span>$15K</span>
+            <input type="range" id="tuition-slider" min="20000" max="75000" value="40000" step="5000" oninput="updateTuitionValue(); refreshMapColors();">
+        </div>
+        
+        <div class="control-group">
+            <label for="market-type">Market Analysis Type:</label>
+            <select id="market-type">
+                <option value="conservative">Conservative (2.5x income, 12x home)</option>
+                <option value="moderate" selected>Moderate (3x income, 15x home)</option>
+                <option value="aggressive">Aggressive (3.5x income, 18x home)</option>
+                <option value="premium">Premium Coastal (4x income, 21x home)</option>
+                <option value="custom">Custom Multipliers...</option>
+            </select>
+        </div>
+        
+        <div id="custom-multipliers" style="display: none;">
+            <div class="control-group">
+                <label for="income-multiplier">Income Multiplier: <span id="income-multiplier-value">3.0</span>x</label>
+                <input type="range" id="income-multiplier" min="1.5" max="6" value="3.0" step="0.5">
+            </div>
+            <div class="control-group">
+                <label for="home-multiplier">Home Value Multiplier: <span id="home-multiplier-value">15.0</span>x</label>
+                <input type="range" id="home-multiplier" min="8" max="25" value="15" step="1">
             </div>
         </div>
         
@@ -426,6 +445,10 @@
         let currentPercentiles = {}; // Store percentiles for current loaded states
         let selectedTract = null; // Currently selected tract for highlighting
         let searchMarkers = []; // Store search result markers
+        
+        // Multiplier settings (shifted up one level)
+        let incomeMultiplier = 3.0; // Default moderate approach (was aggressive)
+        let homeValueMultiplier = 15.0; // Default moderate approach (was aggressive)
         
         // US state codes for organization
         const US_STATES = [
@@ -1040,16 +1063,16 @@
             return 'transparent';                     // Transparent: <100 (Low)
         }
         
-        // Get color based on median household income using tuition-based breakpoints (Moderate Approach)
+        // Get color based on median household income using dynamic tuition-based breakpoints
         function getIncomeColor(income) {
             const tuition = parseInt(document.getElementById('tuition-slider').value);
             
-            // Moderate approach: 5x tuition = excellent, 4x = very good, 3x = good, 2.5x = fair, 2x = moderate
-            const redThreshold = tuition * 5;        // Excellent: ≥ 5x tuition
-            const orangeThreshold = tuition * 4;     // Very Good: 4x - 4.9x tuition
-            const yellowThreshold = tuition * 3;     // Good: 3x - 3.9x tuition
-            const greenThreshold = tuition * 2.5;    // Fair: 2.5x - 2.9x tuition
-            const blueThreshold = tuition * 2;       // Moderate: 2x - 2.4x tuition
+            // Dynamic multipliers based on user selection
+            const redThreshold = tuition * incomeMultiplier;                    // Excellent
+            const orangeThreshold = tuition * (incomeMultiplier * 0.8);         // Very Good: 80% of excellent
+            const yellowThreshold = tuition * (incomeMultiplier * 0.6);         // Good: 60% of excellent  
+            const greenThreshold = tuition * (incomeMultiplier * 0.5);          // Fair: 50% of excellent
+            const blueThreshold = tuition * (incomeMultiplier * 0.4);           // Moderate: 40% of excellent
             
             if (income >= redThreshold) return '#ff0000';      // Red: Excellent
             if (income >= orangeThreshold) return '#ff8000';   // Orange: Very Good
@@ -1059,16 +1082,16 @@
             return 'transparent';                              // Transparent: Low
         }
         
-        // Get color based on median home value using tuition-based breakpoints (Moderate Approach)
+        // Get color based on median home value using dynamic tuition-based breakpoints
         function getHomeValueColor(value) {
             const tuition = parseInt(document.getElementById('tuition-slider').value);
             
-            // Moderate approach: 12x tuition = excellent, 10x = very good, 7.5x = good, 6x = fair, 5x = moderate
-            const redThreshold = tuition * 12;       // Excellent: ≥ 12x tuition
-            const orangeThreshold = tuition * 10;    // Very Good: 10x - 11.9x tuition
-            const yellowThreshold = tuition * 7.5;   // Good: 7.5x - 9.9x tuition
-            const greenThreshold = tuition * 6;      // Fair: 6x - 7.4x tuition
-            const blueThreshold = tuition * 5;       // Moderate: 5x - 5.9x tuition
+            // Dynamic multipliers based on user selection
+            const redThreshold = tuition * homeValueMultiplier;                    // Excellent
+            const orangeThreshold = tuition * (homeValueMultiplier * 0.83);        // Very Good: 83% of excellent
+            const yellowThreshold = tuition * (homeValueMultiplier * 0.625);       // Good: 62.5% of excellent
+            const greenThreshold = tuition * (homeValueMultiplier * 0.5);          // Fair: 50% of excellent
+            const blueThreshold = tuition * (homeValueMultiplier * 0.42);          // Moderate: 42% of excellent
             
             if (value >= redThreshold) return '#ff0000';      // Red: Excellent
             if (value >= orangeThreshold) return '#ff8000';   // Orange: Very Good
@@ -1582,14 +1605,11 @@
         function onTractClick(e) {
             const feature = e.target.feature;
             const props = feature.properties;
+            const geoid = props.geoid || props.GEOID;
             
             // Reset previous selection
             if (selectedTract) {
-                selectedTract.setStyle({
-                    weight: 1,
-                    color: '#666',
-                    fillOpacity: 0.4
-                });
+                selectedTract.setStyle(getTractStyle(selectedTract.feature));
             }
             
             // Highlight selected tract
@@ -1600,10 +1620,66 @@
             });
             selectedTract = e.target;
             
-            // Calculate school contributions
+            // Create popup with tract information
             const tuition = parseInt(document.getElementById('tuition-slider').value);
-            const result = calculateSchoolContributions(feature, tuition);
-            displayTractAnalysis(props.geoid || props.GEOID, result, result.totalScore);
+            const enrollmentScore = calculateTractScore(feature, tuition);
+            const demoData = demographicData.get(geoid);
+            const income = demoData ? demoData.median_hh_income : 0;
+            const homeValue = demoData ? demoData.median_home_value : 0;
+            
+            // Get Kids >$500k with spatial fallback
+            let kids500k = kids500kData.get(geoid);
+            if (!kids500k || kids500k === 0) {
+                kids500k = getKids500kBySpatial(feature);
+            }
+            kids500k = kids500k || 0;
+            
+            const compositeScore = calculateCompositeScore(feature);
+            
+            // Get colors
+            const enrollmentColor = getEnrollmentColor(enrollmentScore);
+            const kids500kColor = getKids500kColor(kids500k);
+            const incomeColor = getIncomeColor(income);
+            const homeValueColor = getHomeValueColor(homeValue);
+            const compositeColor = getCompositeColor(compositeScore);
+            
+            const popupContent = `
+                <div style="min-width: 250px;">
+                    <h4 style="margin: 0 0 10px 0; color: #333;">📊 Census Tract Analysis</h4>
+                    <div style="font-size: 11px; margin-bottom: 8px; color: #888;">Tract: ${geoid}</div>
+                    
+                    <div style="background: ${compositeColor}; color: white; padding: 6px; border-radius: 4px; text-align: center; margin-bottom: 8px; font-weight: bold;">
+                        <div style="color: white;">
+                            <strong>Composite Score: ${compositeScore}</strong>
+                        </div>
+                    </div>
+                    
+                    <div style="font-size: 11px; border-top: 1px solid #eee; padding-top: 6px;">
+                        <div style="display: flex; align-items: center; margin-bottom: 2px;">
+                            <span style="display: inline-block; width: 10px; height: 10px; background: ${enrollmentColor}; border: 1px solid #ccc; margin-right: 6px;"></span>
+                            Enrollment: ${enrollmentScore.toLocaleString()}
+                        </div>
+                        <div style="display: flex; align-items: center; margin-bottom: 2px;">
+                            <span style="display: inline-block; width: 10px; height: 10px; background: ${kids500kColor}; border: 1px solid #ccc; margin-right: 6px;"></span>
+                            Kids >$500k: ${kids500k.toLocaleString()}
+                        </div>
+                        <div style="display: flex; align-items: center; margin-bottom: 2px;">
+                            <span style="display: inline-block; width: 10px; height: 10px; background: ${incomeColor}; border: 1px solid #ccc; margin-right: 6px;"></span>
+                            Income: $${income.toLocaleString()}
+                        </div>
+                        <div style="display: flex; align-items: center;">
+                            <span style="display: inline-block; width: 10px; height: 10px; background: ${homeValueColor}; border: 1px solid #ccc; margin-right: 6px;"></span>
+                            Home Value: $${homeValue.toLocaleString()}
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Create popup
+            const popup = L.popup()
+                .setLatLng(e.latlng)
+                .setContent(popupContent)
+                .openOn(map);
         }
 
         function displayTractAnalysis(geoid, result, calculatedScore) {
@@ -1664,8 +1740,87 @@
             loadDemographicData();
             loadKids500kData(); // Load the new Kids >$500k data
             updateLegend(); // Initialize legend with current mode
+            setupMultiplierControls(); // Setup new multiplier controls
             
             // No longer needed - using sliders instead of dropdown
+        }
+        
+        // Setup multiplier control event handlers
+        function setupMultiplierControls() {
+            // Market type dropdown
+            document.getElementById('market-type').addEventListener('change', function() {
+                const marketType = this.value;
+                const customDiv = document.getElementById('custom-multipliers');
+                
+                if (marketType === 'custom') {
+                    customDiv.style.display = 'block';
+                } else {
+                    customDiv.style.display = 'none';
+                    // Set predefined multipliers (shifted up one level)
+                    switch(marketType) {
+                        case 'conservative':
+                            incomeMultiplier = 2.5;  // Was moderate
+                            homeValueMultiplier = 12.0;
+                            break;
+                        case 'moderate':
+                            incomeMultiplier = 3.0;  // Was aggressive
+                            homeValueMultiplier = 15.0;
+                            break;
+                        case 'aggressive':
+                            incomeMultiplier = 3.5;  // Was premium
+                            homeValueMultiplier = 18.0;
+                            break;
+                        case 'premium':
+                            incomeMultiplier = 4.0;  // New higher level
+                            homeValueMultiplier = 21.0;
+                            break;
+                    }
+                    // Update slider values if in custom mode
+                    document.getElementById('income-multiplier').value = incomeMultiplier;
+                    document.getElementById('home-multiplier').value = homeValueMultiplier;
+                    updateMultiplierDisplays();
+                }
+                
+                // Refresh map colors
+                refreshMapColors();
+            });
+            
+            // Income multiplier slider
+            document.getElementById('income-multiplier').addEventListener('input', function() {
+                incomeMultiplier = parseFloat(this.value);
+                updateMultiplierDisplays();
+                refreshMapColors();
+            });
+            
+            // Home value multiplier slider  
+            document.getElementById('home-multiplier').addEventListener('input', function() {
+                homeValueMultiplier = parseFloat(this.value);
+                updateMultiplierDisplays();
+                refreshMapColors();
+            });
+        }
+        
+        // Update multiplier display values
+        function updateMultiplierDisplays() {
+            document.getElementById('income-multiplier-value').textContent = incomeMultiplier.toFixed(1);
+            document.getElementById('home-multiplier-value').textContent = homeValueMultiplier.toFixed(1);
+        }
+        
+        // Refresh map colors when multipliers or tuition change
+        function refreshMapColors() {
+            // Clear tract score cache since tuition/multipliers changed
+            tractScores.clear();
+            
+            // Refresh all loaded tract layers
+            geojsonLayers.forEach((layer, state) => {
+                layer.eachLayer(function(tractLayer) {
+                    const style = getTractStyle(tractLayer.feature);
+                    tractLayer.setStyle(style);
+                });
+            });
+            
+            // Update legend to reflect new thresholds
+            updateLegend();
         }
         
         // Load Kids >$500k data from CSV with spatial fallback
@@ -1918,74 +2073,74 @@
                     
                 case 'income':
                     const tuition = parseInt(document.getElementById('tuition-slider').value);
-                    const incomeRed = (tuition * 5).toLocaleString();
-                    const incomeOrange = (tuition * 4).toLocaleString();
-                    const incomeYellow = (tuition * 3).toLocaleString();
-                    const incomeGreen = (tuition * 2.5).toLocaleString();
-                    const incomeBlue = (tuition * 2).toLocaleString();
+                    const incomeRed = (tuition * incomeMultiplier).toLocaleString();
+                    const incomeOrange = (tuition * incomeMultiplier * 0.8).toLocaleString();
+                    const incomeYellow = (tuition * incomeMultiplier * 0.6).toLocaleString();
+                    const incomeGreen = (tuition * incomeMultiplier * 0.5).toLocaleString();
+                    const incomeBlue = (tuition * incomeMultiplier * 0.4).toLocaleString();
                     
-                    legendTitle.textContent = `Median Income Legend (Tuition-Based: $${tuition.toLocaleString()})`;
+                    legendTitle.textContent = `Income Legend (${incomeMultiplier}x Multiplier, $${tuition.toLocaleString()} Tuition)`;
                     legendItems.innerHTML = `
                         <div class="legend-item">
                             <span class="legend-color" style="background: #ff0000;"></span>
-                            <span>$${incomeRed}+ (Excellent - 5x tuition)</span>
+                            <span>$${incomeRed}+ (Excellent - ${incomeMultiplier}x)</span>
                         </div>
                         <div class="legend-item">
                             <span class="legend-color" style="background: #ff8000;"></span>
-                            <span>$${incomeOrange}-${(tuition * 5 - 1).toLocaleString()} (Very Good - 4x tuition)</span>
+                            <span>$${incomeOrange}-${(tuition * incomeMultiplier - 1).toLocaleString()} (Very Good - ${(incomeMultiplier * 0.8).toFixed(1)}x)</span>
                         </div>
                         <div class="legend-item">
                             <span class="legend-color" style="background: #ffff00;"></span>
-                            <span>$${incomeYellow}-${(tuition * 4 - 1).toLocaleString()} (Good - 3x tuition)</span>
+                            <span>$${incomeYellow}-${(tuition * incomeMultiplier * 0.8 - 1).toLocaleString()} (Good - ${(incomeMultiplier * 0.6).toFixed(1)}x)</span>
                         </div>
                         <div class="legend-item">
                             <span class="legend-color" style="background: #80ff00;"></span>
-                            <span>$${incomeGreen}-${(tuition * 3 - 1).toLocaleString()} (Fair - 2.5x tuition)</span>
+                            <span>$${incomeGreen}-${(tuition * incomeMultiplier * 0.6 - 1).toLocaleString()} (Fair - ${(incomeMultiplier * 0.5).toFixed(1)}x)</span>
                         </div>
                         <div class="legend-item">
                             <span class="legend-color" style="background: #00ffff;"></span>
-                            <span>$${incomeBlue}-${(tuition * 2.5 - 1).toLocaleString()} (Moderate - 2x tuition)</span>
+                            <span>$${incomeBlue}-${(tuition * incomeMultiplier * 0.5 - 1).toLocaleString()} (Moderate - ${(incomeMultiplier * 0.4).toFixed(1)}x)</span>
                         </div>
                         <div class="legend-item">
                             <span class="legend-color" style="background: transparent; border: 1px solid #ccc;"></span>
-                            <span>&lt;$${incomeBlue} (Low - No Color)</span>
+                            <span>&lt;$${incomeBlue} (Low)</span>
                         </div>
                     `;
                     break;
                     
                 case 'homevalue':
                     const homeTuition = parseInt(document.getElementById('tuition-slider').value);
-                    const homeRed = (homeTuition * 12).toLocaleString();
-                    const homeOrange = (homeTuition * 10).toLocaleString();
-                    const homeYellow = (homeTuition * 7.5).toLocaleString();
-                    const homeGreen = (homeTuition * 6).toLocaleString();
-                    const homeBlue = (homeTuition * 5).toLocaleString();
+                    const homeRed = (homeTuition * homeValueMultiplier).toLocaleString();
+                    const homeOrange = (homeTuition * homeValueMultiplier * 0.83).toLocaleString();
+                    const homeYellow = (homeTuition * homeValueMultiplier * 0.625).toLocaleString();
+                    const homeGreen = (homeTuition * homeValueMultiplier * 0.5).toLocaleString();
+                    const homeBlue = (homeTuition * homeValueMultiplier * 0.42).toLocaleString();
                     
-                    legendTitle.textContent = `Median Home Value Legend (Tuition-Based: $${homeTuition.toLocaleString()})`;
+                    legendTitle.textContent = `Home Value Legend (${homeValueMultiplier}x Multiplier, $${homeTuition.toLocaleString()} Tuition)`;
                     legendItems.innerHTML = `
                         <div class="legend-item">
                             <span class="legend-color" style="background: #ff0000;"></span>
-                            <span>$${homeRed}+ (Excellent - 12x tuition)</span>
+                            <span>$${homeRed}+ (Excellent - ${homeValueMultiplier}x)</span>
                         </div>
                         <div class="legend-item">
                             <span class="legend-color" style="background: #ff8000;"></span>
-                            <span>$${homeOrange}-${(homeTuition * 12 - 1).toLocaleString()} (Very Good - 10x tuition)</span>
+                            <span>$${homeOrange}-${(homeTuition * homeValueMultiplier - 1).toLocaleString()} (Very Good - ${(homeValueMultiplier * 0.83).toFixed(1)}x)</span>
                         </div>
                         <div class="legend-item">
                             <span class="legend-color" style="background: #ffff00;"></span>
-                            <span>$${homeYellow}-${(homeTuition * 10 - 1).toLocaleString()} (Good - 7.5x tuition)</span>
+                            <span>$${homeYellow}-${(homeTuition * homeValueMultiplier * 0.83 - 1).toLocaleString()} (Good - ${(homeValueMultiplier * 0.625).toFixed(1)}x)</span>
                         </div>
                         <div class="legend-item">
                             <span class="legend-color" style="background: #80ff00;"></span>
-                            <span>$${homeGreen}-${(homeTuition * 7.5 - 1).toLocaleString()} (Fair - 6x tuition)</span>
+                            <span>$${homeGreen}-${(homeTuition * homeValueMultiplier * 0.625 - 1).toLocaleString()} (Fair - ${(homeValueMultiplier * 0.5).toFixed(1)}x)</span>
                         </div>
                         <div class="legend-item">
                             <span class="legend-color" style="background: #00ffff;"></span>
-                            <span>$${homeBlue}-${(homeTuition * 6 - 1).toLocaleString()} (Moderate - 5x tuition)</span>
+                            <span>$${homeBlue}-${(homeTuition * homeValueMultiplier * 0.5 - 1).toLocaleString()} (Moderate - ${(homeValueMultiplier * 0.42).toFixed(1)}x)</span>
                         </div>
                         <div class="legend-item">
                             <span class="legend-color" style="background: transparent; border: 1px solid #ccc;"></span>
-                            <span>&lt;$${homeBlue} (Low - No Color)</span>
+                            <span>&lt;$${homeBlue} (Low)</span>
                         </div>
                     `;
                     break;

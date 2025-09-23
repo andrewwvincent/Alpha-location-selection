@@ -1040,24 +1040,42 @@
             return 'transparent';                     // Transparent: <100 (Low)
         }
         
-        // Get color based on median household income using fixed breakpoints
+        // Get color based on median household income using tuition-based breakpoints (Moderate Approach)
         function getIncomeColor(income) {
-            if (income >= 200000) return '#ff0000';   // Red: $200k+ (Excellent)
-            if (income >= 150000) return '#ff8000';   // Orange: $150k-199k (Very Good)
-            if (income >= 125000) return '#ffff00';   // Yellow: $125k-149k (Good)
-            if (income >= 100000) return '#80ff00';   // Light green: $100k-124k (Fair)
-            if (income >= 75000) return '#00ffff';    // Blue: $75k-99k (Moderate)
-            return 'transparent';                     // Transparent: <$75k (Low)
+            const tuition = parseInt(document.getElementById('tuition-slider').value);
+            
+            // Moderate approach: 5x tuition = excellent, 4x = very good, 3x = good, 2.5x = fair, 2x = moderate
+            const redThreshold = tuition * 5;        // Excellent: ≥ 5x tuition
+            const orangeThreshold = tuition * 4;     // Very Good: 4x - 4.9x tuition
+            const yellowThreshold = tuition * 3;     // Good: 3x - 3.9x tuition
+            const greenThreshold = tuition * 2.5;    // Fair: 2.5x - 2.9x tuition
+            const blueThreshold = tuition * 2;       // Moderate: 2x - 2.4x tuition
+            
+            if (income >= redThreshold) return '#ff0000';      // Red: Excellent
+            if (income >= orangeThreshold) return '#ff8000';   // Orange: Very Good
+            if (income >= yellowThreshold) return '#ffff00';   // Yellow: Good
+            if (income >= greenThreshold) return '#80ff00';    // Light green: Fair
+            if (income >= blueThreshold) return '#00ffff';     // Blue: Moderate
+            return 'transparent';                              // Transparent: Low
         }
         
-        // Get color based on median home value using fixed breakpoints
+        // Get color based on median home value using tuition-based breakpoints (Moderate Approach)
         function getHomeValueColor(value) {
-            if (value >= 800000) return '#ff0000';    // Red: $800k+ (Excellent)
-            if (value >= 600000) return '#ff8000';    // Orange: $600k-799k (Very Good)
-            if (value >= 450000) return '#ffff00';    // Yellow: $450k-599k (Good)
-            if (value >= 350000) return '#80ff00';    // Light green: $350k-449k (Fair)
-            if (value >= 250000) return '#00ffff';    // Blue: $250k-349k (Moderate)
-            return 'transparent';                     // Transparent: <$250k (Low)
+            const tuition = parseInt(document.getElementById('tuition-slider').value);
+            
+            // Moderate approach: 12x tuition = excellent, 10x = very good, 7.5x = good, 6x = fair, 5x = moderate
+            const redThreshold = tuition * 12;       // Excellent: ≥ 12x tuition
+            const orangeThreshold = tuition * 10;    // Very Good: 10x - 11.9x tuition
+            const yellowThreshold = tuition * 7.5;   // Good: 7.5x - 9.9x tuition
+            const greenThreshold = tuition * 6;      // Fair: 6x - 7.4x tuition
+            const blueThreshold = tuition * 5;       // Moderate: 5x - 5.9x tuition
+            
+            if (value >= redThreshold) return '#ff0000';      // Red: Excellent
+            if (value >= orangeThreshold) return '#ff8000';   // Orange: Very Good
+            if (value >= yellowThreshold) return '#ffff00';   // Yellow: Good
+            if (value >= greenThreshold) return '#80ff00';    // Light green: Fair
+            if (value >= blueThreshold) return '#00ffff';     // Blue: Moderate
+            return 'transparent';                             // Transparent: Low
         }
         
         // Get color based on composite score
@@ -1078,9 +1096,12 @@
             const enrollmentValue = calculateTractScore(feature, tuition);
             const enrollmentScore = getMetricPoints(enrollmentValue, 'enrollment');
             
-            // Get Kids >$500k score (now available!)
-            const kids500kValue = kids500kData.get(geoid) || 0;
-            const kids500kScore = getMetricPoints(kids500kValue, 'kids500k');
+            // Get Kids >$500k score with spatial fallback
+            let kids500kValue = kids500kData.get(geoid);
+            if (!kids500kValue || kids500kValue === 0) {
+                kids500kValue = getKids500kBySpatial(feature);
+            }
+            const kids500kScore = getMetricPoints(kids500kValue || 0, 'kids500k');
             
             const demoData = demographicData.get(geoid);
             const incomeScore = getMetricPoints(demoData?.median_hh_income || 0, 'income');
@@ -1526,7 +1547,12 @@
             
             switch (currentHeatmapMode) {
                 case 'kids500k':
-                    return kids500kData.get(geoid) || 0;
+                    // Try GEOID first, then spatial fallback
+                    let kids500kValue = kids500kData.get(geoid);
+                    if (!kids500kValue || kids500kValue === 0) {
+                        kids500kValue = getKids500kBySpatial(feature);
+                    }
+                    return kids500kValue || 0;
                     
                 case 'income':
                     const incomeData = demographicData.get(geoid);
@@ -1642,7 +1668,7 @@
             // No longer needed - using sliders instead of dropdown
         }
         
-        // Load Kids >$500k data from CSV
+        // Load Kids >$500k data from CSV with spatial fallback
         async function loadKids500kData() {
             try {
                 console.log('Loading Kids >$500k data...');
@@ -1652,21 +1678,70 @@
                 const lines = csvText.split('\n');
                 const headers = lines[0].split(',');
                 
+                // Store both GEOID and spatial data
+                const kids500kSpatial = [];
+                
                 for (let i = 1; i < lines.length; i++) {
                     const line = lines[i].trim();
                     if (line) {
                         const values = line.split(',');
                         const geoid = values[0];
                         const kids500k = parseFloat(values[1]) || 0;
+                        const lat = parseFloat(values[2]);
+                        const lng = parseFloat(values[3]);
                         
+                        // Try GEOID first
                         kids500kData.set(geoid, kids500k);
+                        
+                        // Also store spatial data for fallback
+                        if (!isNaN(lat) && !isNaN(lng)) {
+                            kids500kSpatial.push({
+                                geoid: geoid,
+                                kids500k: kids500k,
+                                lat: lat,
+                                lng: lng
+                            });
+                        }
                     }
                 }
                 
+                // Store spatial data globally for fallback lookups
+                window.kids500kSpatial = kids500kSpatial;
+                
                 console.log(`Loaded Kids >$500k data for ${kids500kData.size} census tracts`);
+                console.log(`Spatial fallback data available for ${kids500kSpatial.length} tracts`);
             } catch (error) {
                 console.error('Error loading Kids >$500k data:', error);
             }
+        }
+        
+        // Spatial lookup function for Kids >$500k data when GEOID fails
+        function getKids500kBySpatial(tractFeature) {
+            if (!window.kids500kSpatial) return 0;
+            
+            // Get tract centroid (approximate)
+            const bounds = L.geoJSON(tractFeature).getBounds();
+            const tractLat = bounds.getCenter().lat;
+            const tractLng = bounds.getCenter().lng;
+            
+            // Find closest Kids >$500k data point (within reasonable distance)
+            let closest = null;
+            let minDistance = Infinity;
+            const maxDistance = 0.01; // ~1km tolerance
+            
+            for (const point of window.kids500kSpatial) {
+                const distance = Math.sqrt(
+                    Math.pow(tractLat - point.lat, 2) + 
+                    Math.pow(tractLng - point.lng, 2)
+                );
+                
+                if (distance < minDistance && distance < maxDistance) {
+                    minDistance = distance;
+                    closest = point;
+                }
+            }
+            
+            return closest ? closest.kids500k : 0;
         }
 
         // Load demographic data from CSV
@@ -1842,61 +1917,75 @@
                     break;
                     
                 case 'income':
-                    legendTitle.textContent = 'Median Income Legend (Fixed Breakpoints)';
+                    const tuition = parseInt(document.getElementById('tuition-slider').value);
+                    const incomeRed = (tuition * 5).toLocaleString();
+                    const incomeOrange = (tuition * 4).toLocaleString();
+                    const incomeYellow = (tuition * 3).toLocaleString();
+                    const incomeGreen = (tuition * 2.5).toLocaleString();
+                    const incomeBlue = (tuition * 2).toLocaleString();
+                    
+                    legendTitle.textContent = `Median Income Legend (Tuition-Based: $${tuition.toLocaleString()})`;
                     legendItems.innerHTML = `
                         <div class="legend-item">
                             <span class="legend-color" style="background: #ff0000;"></span>
-                            <span>$200k+ (Excellent)</span>
+                            <span>$${incomeRed}+ (Excellent - 5x tuition)</span>
                         </div>
                         <div class="legend-item">
                             <span class="legend-color" style="background: #ff8000;"></span>
-                            <span>$150k-199k (Very Good)</span>
+                            <span>$${incomeOrange}-${(tuition * 5 - 1).toLocaleString()} (Very Good - 4x tuition)</span>
                         </div>
                         <div class="legend-item">
                             <span class="legend-color" style="background: #ffff00;"></span>
-                            <span>$125k-149k (Good)</span>
+                            <span>$${incomeYellow}-${(tuition * 4 - 1).toLocaleString()} (Good - 3x tuition)</span>
                         </div>
                         <div class="legend-item">
                             <span class="legend-color" style="background: #80ff00;"></span>
-                            <span>$100k-124k (Fair)</span>
+                            <span>$${incomeGreen}-${(tuition * 3 - 1).toLocaleString()} (Fair - 2.5x tuition)</span>
                         </div>
                         <div class="legend-item">
                             <span class="legend-color" style="background: #00ffff;"></span>
-                            <span>$75k-99k (Moderate)</span>
+                            <span>$${incomeBlue}-${(tuition * 2.5 - 1).toLocaleString()} (Moderate - 2x tuition)</span>
                         </div>
                         <div class="legend-item">
                             <span class="legend-color" style="background: transparent; border: 1px solid #ccc;"></span>
-                            <span>&lt;$75k (Low - No Color)</span>
+                            <span>&lt;$${incomeBlue} (Low - No Color)</span>
                         </div>
                     `;
                     break;
                     
                 case 'homevalue':
-                    legendTitle.textContent = 'Median Home Value Legend (Fixed Breakpoints)';
+                    const homeTuition = parseInt(document.getElementById('tuition-slider').value);
+                    const homeRed = (homeTuition * 12).toLocaleString();
+                    const homeOrange = (homeTuition * 10).toLocaleString();
+                    const homeYellow = (homeTuition * 7.5).toLocaleString();
+                    const homeGreen = (homeTuition * 6).toLocaleString();
+                    const homeBlue = (homeTuition * 5).toLocaleString();
+                    
+                    legendTitle.textContent = `Median Home Value Legend (Tuition-Based: $${homeTuition.toLocaleString()})`;
                     legendItems.innerHTML = `
                         <div class="legend-item">
                             <span class="legend-color" style="background: #ff0000;"></span>
-                            <span>$800k+ (Excellent)</span>
+                            <span>$${homeRed}+ (Excellent - 12x tuition)</span>
                         </div>
                         <div class="legend-item">
                             <span class="legend-color" style="background: #ff8000;"></span>
-                            <span>$600k-799k (Very Good)</span>
+                            <span>$${homeOrange}-${(homeTuition * 12 - 1).toLocaleString()} (Very Good - 10x tuition)</span>
                         </div>
                         <div class="legend-item">
                             <span class="legend-color" style="background: #ffff00;"></span>
-                            <span>$450k-599k (Good)</span>
+                            <span>$${homeYellow}-${(homeTuition * 10 - 1).toLocaleString()} (Good - 7.5x tuition)</span>
                         </div>
                         <div class="legend-item">
                             <span class="legend-color" style="background: #80ff00;"></span>
-                            <span>$350k-449k (Fair)</span>
+                            <span>$${homeGreen}-${(homeTuition * 7.5 - 1).toLocaleString()} (Fair - 6x tuition)</span>
                         </div>
                         <div class="legend-item">
                             <span class="legend-color" style="background: #00ffff;"></span>
-                            <span>$250k-349k (Moderate)</span>
+                            <span>$${homeBlue}-${(homeTuition * 6 - 1).toLocaleString()} (Moderate - 5x tuition)</span>
                         </div>
                         <div class="legend-item">
                             <span class="legend-color" style="background: transparent; border: 1px solid #ccc;"></span>
-                            <span>&lt;$250k (Low - No Color)</span>
+                            <span>&lt;$${homeBlue} (Low - No Color)</span>
                         </div>
                     `;
                     break;
@@ -2160,7 +2249,12 @@
             const demoData = demographicData.get(geoid);
             const income = demoData ? demoData.median_hh_income : 0;
             const homeValue = demoData ? demoData.median_home_value : 0;
-            const kids500k = kids500kData.get(geoid) || 0;
+            // Get Kids >$500k with spatial fallback
+            let kids500k = kids500kData.get(geoid);
+            if (!kids500k || kids500k === 0) {
+                kids500k = getKids500kBySpatial(tractFeature);
+            }
+            kids500k = kids500k || 0;
             const compositeScore = calculateCompositeScore(tractFeature);
             
             // Get colors

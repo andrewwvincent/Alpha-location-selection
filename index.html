@@ -148,25 +148,27 @@
         
         .dual-range-slider input[type="range"]::-webkit-slider-thumb {
             -webkit-appearance: none;
-            height: 20px;
-            width: 20px;
+            height: 18px;
+            width: 18px;
             border-radius: 50%;
             background: #007bff;
             cursor: pointer;
             pointer-events: all;
             border: 2px solid white;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            margin-top: -6px; /* Center the thumb on the track */
         }
         
         .dual-range-slider input[type="range"]::-moz-range-thumb {
-            height: 20px;
-            width: 20px;
+            height: 18px;
+            width: 18px;
             border-radius: 50%;
             background: #007bff;
             cursor: pointer;
             pointer-events: all;
             border: 2px solid white;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+            margin-top: -6px; /* Center the thumb on the track */
         }
         
         .range-track {
@@ -330,9 +332,9 @@
             <label for="distance-range">Distance Range: <span id="distance-range-value">5-20 miles</span></label>
             <div class="dual-range-slider">
                 <div class="range-track" id="range-track"></div>
-                <input type="range" id="distance-min-slider" min="1" max="25" step="1" value="5" 
+                <input type="range" id="distance-min-slider" min="1" max="29" step="1" value="5" 
                        oninput="updateDistanceRange();">
-                <input type="range" id="distance-max-slider" min="5" max="30" step="1" value="20" 
+                <input type="range" id="distance-max-slider" min="2" max="30" step="1" value="20" 
                        oninput="updateDistanceRange();">
             </div>
             <div style="display: flex; justify-content: space-between; font-size: 12px; color: #666;">
@@ -1836,13 +1838,15 @@
             let minVal = parseInt(minSlider.value);
             let maxVal = parseInt(maxSlider.value);
             
-            // Ensure min <= max
+            // Ensure min < max with at least 1 mile difference
             if (minVal >= maxVal) {
                 if (minSlider === document.activeElement) {
-                    maxVal = minVal + 1;
+                    // If moving min slider, adjust max to be at least 1 mile higher
+                    maxVal = Math.min(minVal + 1, 30);
                     maxSlider.value = maxVal;
                 } else {
-                    minVal = maxVal - 1;
+                    // If moving max slider, adjust min to be at least 1 mile lower
+                    minVal = Math.max(maxVal - 1, 1);
                     minSlider.value = minVal;
                 }
             }
@@ -1852,9 +1856,18 @@
             minDisplay.textContent = minVal;
             maxDisplay.textContent = maxVal;
             
-            // Update track visual
-            const minPercent = ((minVal - 1) / (30 - 1)) * 100;
-            const maxPercent = ((maxVal - 1) / (30 - 1)) * 100;
+            // Update track visual - use the actual slider ranges for proper alignment
+            const minSliderMin = parseInt(minSlider.min); // 1
+            const minSliderMax = parseInt(minSlider.max); // 25
+            const maxSliderMin = parseInt(maxSlider.min); // 5
+            const maxSliderMax = parseInt(maxSlider.max); // 30
+            
+            // Use the full range from 1 to 30 for consistent positioning
+            const fullRangeMin = 1;
+            const fullRangeMax = 30;
+            
+            const minPercent = ((minVal - fullRangeMin) / (fullRangeMax - fullRangeMin)) * 100;
+            const maxPercent = ((maxVal - fullRangeMin) / (fullRangeMax - fullRangeMin)) * 100;
             track.style.left = minPercent + '%';
             track.style.width = (maxPercent - minPercent) + '%';
         }

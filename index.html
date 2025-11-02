@@ -30,6 +30,41 @@
             min-width: 300px;
             max-height: 80vh;
             overflow-y: auto;
+            transition: transform 0.3s ease, opacity 0.3s ease;
+        }
+        
+        .info-panel.collapsed {
+            display: none;
+        }
+        
+        .mini-panel {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: white;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+            z-index: 1000;
+            display: none;
+            min-width: 120px;
+        }
+        
+        .mini-panel.visible {
+            display: block;
+        }
+        
+        .panel-toggle {
+            background: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            padding: 4px 8px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .panel-toggle:hover {
+            background: #e9ecef;
         }
         
         .info-panel h3 {
@@ -250,8 +285,11 @@
     
     <div id="map"></div>
     
-    <div class="info-panel">
-        <h3>US School Analysis</h3>
+    <div class="info-panel" id="info-panel">
+        <h3 style="display: flex; justify-content: space-between; align-items: center;">
+            US School Analysis
+            <button onclick="togglePanel()" class="panel-toggle" title="Collapse Panel">−</button>
+        </h3>
         
         <div class="control-group">
             <label for="tuition-slider">Proposed Tuition: <span id="tuition-value">$40,000</span></label>
@@ -332,6 +370,69 @@
             </div>
         </div>
         
+        <div class="control-group" id="enrollment-bracket-toggle" style="display: block;">
+            <label>Enrollment Score Brackets:</label>
+            <div style="margin-top: 5px;">
+                <label style="display: block; margin-bottom: 3px;">
+                    <input type="radio" name="enrollment-bracket-type" value="fixed" checked onchange="switchEnrollmentBracketType()"> 
+                    Fixed Brackets (5000+, 3000-4999, etc.)
+                </label>
+                <label style="display: block; margin-bottom: 3px;">
+                    <input type="radio" name="enrollment-bracket-type" value="percentiles" onchange="switchEnrollmentBracketType()"> 
+                    Percentiles (Top 20%, 20-40%, etc.)
+                </label>
+            </div>
+        </div>
+        
+        <div class="control-group" id="manual-enrollment-thresholds" style="display: block;">
+            <label>Manual Enrollment Score Thresholds:</label>
+            <div style="margin-top: 5px;">
+                <label style="display: block; margin-bottom: 3px;">
+                    <input type="checkbox" id="use-manual-thresholds" onchange="toggleManualThresholds()"> 
+                    Use Manual Thresholds
+                </label>
+            </div>
+            <div id="threshold-inputs" style="display: none; margin-top: 10px;">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px;">
+                    <div>
+                        <label for="red-threshold" style="color: #ff0000; font-weight: bold;">Red (Excellent):</label>
+                        <input type="number" id="red-threshold" value="5000" min="0" step="100" style="width: 100%; padding: 4px; border: 1px solid #ddd; border-radius: 3px;" onchange="updateManualThresholds()">
+                    </div>
+                    <div>
+                        <label for="orange-threshold" style="color: #ff8000; font-weight: bold;">Orange (Very Good):</label>
+                        <input type="number" id="orange-threshold" value="3000" min="0" step="100" style="width: 100%; padding: 4px; border: 1px solid #ddd; border-radius: 3px;" onchange="updateManualThresholds()">
+                    </div>
+                    <div>
+                        <label for="yellow-threshold" style="color: #ffaa00; font-weight: bold;">Yellow (Good):</label>
+                        <input type="number" id="yellow-threshold" value="2500" min="0" step="100" style="width: 100%; padding: 4px; border: 1px solid #ddd; border-radius: 3px;" onchange="updateManualThresholds()">
+                    </div>
+                    <div>
+                        <label for="green-threshold" style="color: #80ff00; font-weight: bold;">Light Green (Fair):</label>
+                        <input type="number" id="green-threshold" value="1500" min="0" step="100" style="width: 100%; padding: 4px; border: 1px solid #ddd; border-radius: 3px;" onchange="updateManualThresholds()">
+                    </div>
+                    <div>
+                        <label for="blue-threshold" style="color: #00ffff; font-weight: bold;">Blue (Moderate):</label>
+                        <input type="number" id="blue-threshold" value="500" min="0" step="100" style="width: 100%; padding: 4px; border: 1px solid #ddd; border-radius: 3px;" onchange="updateManualThresholds()">
+                    </div>
+                    <div style="display: flex; align-items: end;">
+                        <button onclick="resetToDefaults()" style="width: 100%; padding: 4px; background: #6c757d; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 11px;">Reset Defaults</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="control-group" id="percentile-radius-control" style="display: none;">
+            <label for="percentile-radius-slider">Percentile Radius: <span id="percentile-radius-value">50 miles</span></label>
+            <input type="range" id="percentile-radius-slider" min="10" max="100" value="50" step="10" oninput="updatePercentileRadiusDisplay();">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; color: #666;">
+                <span>10 miles</span>
+                <span>100 miles</span>
+            </div>
+            <div style="font-size: 11px; color: #888; margin-top: 5px;">
+                Radius for calculating local percentiles around each tract
+            </div>
+        </div>
+        
         <div class="legend">
             <div id="legend-title" style="font-weight: bold; margin-bottom: 8px;">Enrollment Score Legend</div>
             <div id="legend-items">
@@ -394,6 +495,17 @@
         </div>
 
         <div class="control-group">
+            <label for="csv-upload">Upload CSV Locations:</label>
+            <div style="display: flex; gap: 5px; align-items: center;">
+                <input type="file" id="csv-upload" accept=".csv" style="flex: 1; padding: 4px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px;">
+                <button onclick="uploadCSV()" style="padding: 8px 12px; background: #17a2b8; color: white; border: none; border-radius: 4px; cursor: pointer;">Upload</button>
+                <button onclick="clearUploadedPins()" style="padding: 8px 12px; background: #6c757d; color: white; border: none; border-radius: 4px; cursor: pointer;">Clear Pins</button>
+            </div>
+            <div id="csv-results" style="margin-top: 5px; font-size: 12px; color: #666;"></div>
+            <div style="margin-top: 5px; font-size: 11px; color: #888;">Expected columns: name, address, lat, lon</div>
+        </div>
+
+        <div class="control-group">
             <label for="state-jump-selector">Jump to State:</label>
             <select id="state-jump-selector" onchange="jumpToState()">
                 <option value="">Select a state...</option>
@@ -432,6 +544,14 @@
         </div>
     </div>
 
+    <!-- Mini collapsed panel -->
+    <div class="mini-panel" id="mini-panel">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <strong>US School Analysis</strong>
+            <button onclick="togglePanel()" class="panel-toggle" title="Expand Panel">+</button>
+        </div>
+    </div>
+
     <script>
         let map;
         let schoolLayer;
@@ -443,8 +563,12 @@
         let kids500kData = new Map(); // Store Kids >$500k data by geoid
         let currentHeatmapMode = 'enrollment'; // Current visualization mode
         let currentPercentiles = {}; // Store percentiles for current loaded states
+        let enrollmentBracketType = 'fixed'; // 'fixed' or 'percentiles'
+        let percentileRadius = 50; // Radius in miles for local percentile calculation
+        let localPercentileCache = new Map(); // Cache for local percentiles
         let selectedTract = null; // Currently selected tract for highlighting
         let searchMarkers = []; // Store search result markers
+        let uploadedMarkers = []; // Store CSV uploaded markers
         
         // Multiplier settings (shifted up one level)
         let incomeMultiplier = 3.0; // Default moderate approach (was aggressive)
@@ -881,6 +1005,7 @@
             geojsonLayers.clear();
             loadedStates.clear();
             tractScores.clear();
+            localPercentileCache.clear();
             
             // Update stats
             updateStats();
@@ -966,7 +1091,7 @@
                         
                         batch.forEach(sublayer => {
                             const value = getTractValue(sublayer.feature);
-                            const color = getTractColor(value);
+                            const color = getTractColor(value, null, sublayer.feature);
                             sublayer.setStyle({
                                 fillColor: color,
                                 fillOpacity: 0.4,
@@ -995,7 +1120,7 @@
                     // Small states - process normally without progress bar
                     layer.eachLayer(function(sublayer) {
                         const value = getTractValue(sublayer.feature);
-                        const color = getTractColor(value);
+                        const color = getTractColor(value, null, sublayer.feature);
                         sublayer.setStyle({
                             fillColor: color,
                             fillOpacity: 0.4,
@@ -1024,12 +1149,12 @@
         }
 
         // Get color based on current heatmap mode and value
-        function getTractColor(value, mode = null) {
+        function getTractColor(value, mode = null, tractFeature = null) {
             const currentMode = mode || currentHeatmapMode;
             
             switch (currentMode) {
                 case 'enrollment':
-                    return getEnrollmentColor(value);
+                    return getEnrollmentColor(value, tractFeature);
                 case 'kids500k':
                     return getKids500kColor(value);
                 case 'income':
@@ -1039,18 +1164,46 @@
                 case 'composite':
                     return getCompositeColor(value);
                 default:
-                    return getEnrollmentColor(value);
+                    return getEnrollmentColor(value, tractFeature);
             }
         }
         
         // Get color based on enrollment score with 6 buckets as requested
-        function getEnrollmentColor(score) {
-            if (score >= 5000) return '#ff0000';      // Red: 5000+ (Excellent)
-            if (score >= 3000) return '#ff8000';      // Orange: 3000-4999 (Very Good)
-            if (score >= 2500) return '#ffff00';      // Yellow: 2500-2999 (Good)
-            if (score >= 1500) return '#80ff00';      // Light green: 1500-2499 (Fair)
-            if (score >= 500) return '#00ffff';       // Blue: 500-1499 (Moderate)
-            return 'transparent';                     // Transparent: 0-499 (Low)
+        function getEnrollmentColor(score, tractFeature = null) {
+            // Check if manual thresholds are enabled
+            const useManual = document.getElementById('use-manual-thresholds')?.checked;
+            
+            if (useManual) {
+                // Manual thresholds
+                const redThreshold = parseInt(document.getElementById('red-threshold')?.value || 5000);
+                const orangeThreshold = parseInt(document.getElementById('orange-threshold')?.value || 3000);
+                const yellowThreshold = parseInt(document.getElementById('yellow-threshold')?.value || 2500);
+                const greenThreshold = parseInt(document.getElementById('green-threshold')?.value || 1500);
+                const blueThreshold = parseInt(document.getElementById('blue-threshold')?.value || 500);
+                
+                if (score >= redThreshold) return '#ff0000';      // Red: Excellent
+                if (score >= orangeThreshold) return '#ff8000';   // Orange: Very Good
+                if (score >= yellowThreshold) return '#ffff00';   // Yellow: Good
+                if (score >= greenThreshold) return '#80ff00';    // Light green: Fair
+                if (score >= blueThreshold) return '#00ffff';     // Blue: Moderate
+                return 'transparent';                             // Transparent: Low
+            } else if (enrollmentBracketType === 'fixed') {
+                // Fixed brackets
+                if (score >= 5000) return '#ff0000';      // Red: 5000+ (Excellent)
+                if (score >= 3000) return '#ff8000';      // Orange: 3000-4999 (Very Good)
+                if (score >= 2500) return '#ffff00';      // Yellow: 2500-2999 (Good)
+                if (score >= 1500) return '#80ff00';      // Light green: 1500-2499 (Fair)
+                if (score >= 500) return '#00ffff';       // Blue: 500-1499 (Moderate)
+                return 'transparent';                     // Transparent: 0-499 (Low)
+            } else {
+                // Local percentile-based brackets
+                if (tractFeature) {
+                    return getLocalPercentileColor(score, tractFeature, 'enrollment');
+                } else {
+                    // Fallback to global percentiles if no tract feature provided
+                    return getPercentileColor(score, 'enrollment');
+                }
+            }
         }
         
         // Get color based on kids >$500k count using new breakpoints
@@ -1289,6 +1442,152 @@
             return (schoolTuition - minTuition) / (proposedTuition - minTuition);
         }
 
+        // Get centroid coordinates from a GeoJSON feature
+        function getCentroidFromFeature(feature) {
+            if (!feature || !feature.geometry || !feature.geometry.coordinates) {
+                return null;
+            }
+            
+            const coords = feature.geometry.coordinates[0]; // Get the outer ring
+            if (!coords || coords.length === 0) {
+                return null;
+            }
+            
+            let totalLat = 0;
+            let totalLng = 0;
+            let pointCount = 0;
+            
+            coords.forEach(coord => {
+                totalLng += coord[0];
+                totalLat += coord[1];
+                pointCount++;
+            });
+            
+            if (pointCount === 0) {
+                return null;
+            }
+            
+            return {
+                lat: totalLat / pointCount,
+                lng: totalLng / pointCount
+            };
+        }
+
+        // Get all tracts within radius of a given tract
+        function getTractsWithinRadius(centerTract, radiusMiles) {
+            const centerCoords = getCentroidFromFeature(centerTract);
+            if (!centerCoords) return [];
+            
+            const nearbyTracts = [];
+            
+            // Search through all loaded states
+            loadedStates.forEach(state => {
+                if (geojsonLayers.has(state)) {
+                    geojsonLayers.get(state).eachLayer(function(layer) {
+                        const tractCoords = getCentroidFromFeature(layer.feature);
+                        if (tractCoords) {
+                            const distance = calculateDistance(
+                                centerCoords.lat, centerCoords.lng,
+                                tractCoords.lat, tractCoords.lng
+                            );
+                            
+                            if (distance <= radiusMiles) {
+                                nearbyTracts.push({
+                                    feature: layer.feature,
+                                    distance: distance,
+                                    coords: tractCoords
+                                });
+                            }
+                        }
+                    });
+                }
+            });
+            
+            return nearbyTracts;
+        }
+        
+        // Calculate local percentiles for a tract based on nearby tracts
+        function calculateLocalPercentiles(centerTract, mode) {
+            const geoid = centerTract.properties.GEOID || centerTract.properties.geoid;
+            const cacheKey = `${geoid}_${mode}_${percentileRadius}`;
+            
+            // Check cache first
+            if (localPercentileCache.has(cacheKey)) {
+                return localPercentileCache.get(cacheKey);
+            }
+            
+            const nearbyTracts = getTractsWithinRadius(centerTract, percentileRadius);
+            const values = [];
+            
+            // Collect values from nearby tracts
+            nearbyTracts.forEach(tractInfo => {
+                const geoid = tractInfo.feature.properties.GEOID;
+                const demoData = demographicData.get(geoid);
+                
+                if (demoData) {
+                    let value = 0;
+                    switch (mode) {
+                        case 'enrollment':
+                            const tuition = document.getElementById('tuition-slider') ? 
+                                parseInt(document.getElementById('tuition-slider').value) : 40000;
+                            value = calculateTractScore(tractInfo.feature, tuition);
+                            break;
+                        case 'income':
+                            value = demoData.median_hh_income;
+                            break;
+                        case 'homevalue':
+                            value = demoData.median_home_value;
+                            break;
+                        case 'population':
+                            value = demoData.total_pop;
+                            break;
+                        case 'kids500k':
+                            value = demoData.kids500k;
+                            break;
+                    }
+                    if (value > 0) values.push(value);
+                }
+            });
+            
+            if (values.length === 0) {
+                return null;
+            }
+            
+            // Sort values and calculate percentiles
+            values.sort((a, b) => a - b);
+            
+            const percentiles = {
+                p0: values[0],
+                p20: values[Math.floor(values.length * 0.2)],
+                p40: values[Math.floor(values.length * 0.4)],
+                p60: values[Math.floor(values.length * 0.6)],
+                p80: values[Math.floor(values.length * 0.8)],
+                p100: values[values.length - 1],
+                count: values.length
+            };
+            
+            // Cache the result
+            localPercentileCache.set(cacheKey, percentiles);
+            
+            return percentiles;
+        }
+        
+        // Get color based on local percentiles
+        function getLocalPercentileColor(value, centerTract, mode) {
+            const localPercentiles = calculateLocalPercentiles(centerTract, mode);
+            
+            if (!localPercentiles) {
+                return '#cccccc'; // Grey if no local data
+            }
+            
+            if (value >= localPercentiles.p80) return '#ff0000';      // Red: Top 20% (Excellent)
+            if (value >= localPercentiles.p60) return '#ff8000';      // Orange: 60-80% (Very Good)
+            if (value >= localPercentiles.p40) return '#ffff00';      // Yellow: 40-60% (Good)
+            if (value >= localPercentiles.p20) return '#80ff00';      // Light green: 20-40% (Fair)
+            if (value >= localPercentiles.p0) return '#00ffff';       // Blue: 0-20% (Moderate)
+            return 'transparent';                                     // Transparent: No data
+        }
+
         function calculateCentroid(coordinates) {
             let totalLat = 0;
             let totalLng = 0;
@@ -1314,12 +1613,13 @@
             
             // Clear cache since parameters changed
             tractScores.clear();
+            localPercentileCache.clear();
             
             loadedStates.forEach(state => {
                 if (geojsonLayers.has(state)) {
                     geojsonLayers.get(state).eachLayer(function(layer) {
                         const value = getTractValue(layer.feature);
-                        const color = getTractColor(value);
+                        const color = getTractColor(value, null, layer.feature);
                         layer.setStyle({
                             fillColor: color,
                             fillOpacity: 0.4,
@@ -1385,11 +1685,16 @@
         async function performRecalculation() {
             isRecalculating = true;
             
+            // Apply percentile radius change if needed
+            applyPercentileRadiusChange();
+            
             const totalTracts = getTotalLoadedTracts();
             if (totalTracts > 2000) {
                 await performBatchedRecalculation();
             } else {
                 updateTractColorsForLoadedStates();
+                // Refresh pin popups after simple recalculation too
+                refreshPinPopups();
             }
             
             isRecalculating = false;
@@ -1409,6 +1714,7 @@
             
             // Clear cache since parameters changed
             tractScores.clear();
+            localPercentileCache.clear();
             
             let processedTracts = 0;
             let totalTracts = 0;
@@ -1432,7 +1738,7 @@
                     // Process batch
                     batch.forEach(tractLayer => {
                         const value = getTractValue(tractLayer.feature);
-                        const color = getTractColor(value);
+                        const color = getTractColor(value, null, tractLayer.feature);
                         
                         tractLayer.setStyle({
                             fillColor: color,
@@ -1459,6 +1765,9 @@
             setTimeout(() => {
                 progressContainer.style.display = 'none';
             }, 1000);
+            
+            // Refresh pin popups after recalculation
+            refreshPinPopups();
         }
         
         // Toggle school marker visibility
@@ -1550,10 +1859,47 @@
             track.style.width = (maxPercent - minPercent) + '%';
         }
 
+        // Manual threshold functions
+        function toggleManualThresholds() {
+            const checkbox = document.getElementById('use-manual-thresholds');
+            const inputs = document.getElementById('threshold-inputs');
+            
+            if (checkbox.checked) {
+                inputs.style.display = 'block';
+                // Switch to manual mode and update colors
+                updateManualThresholds();
+            } else {
+                inputs.style.display = 'none';
+                // Switch back to fixed mode and update colors
+                updateTractColorsForLoadedStates();
+            }
+        }
+
+        function updateManualThresholds() {
+            const checkbox = document.getElementById('use-manual-thresholds');
+            if (!checkbox.checked) return;
+            
+            // Update tract colors with new thresholds
+            updateTractColorsForLoadedStates();
+            
+            // Update legend with new values
+            updateLegend();
+        }
+
+        function resetToDefaults() {
+            document.getElementById('red-threshold').value = 5000;
+            document.getElementById('orange-threshold').value = 3000;
+            document.getElementById('yellow-threshold').value = 2500;
+            document.getElementById('green-threshold').value = 1500;
+            document.getElementById('blue-threshold').value = 500;
+            
+            updateManualThresholds();
+        }
+
         // Style census tracts with borders matching tract color
         function tractStyle(feature) {
             const value = getTractValue(feature);
-            const tractColor = getTractColor(value);
+            const tractColor = getTractColor(value, null, feature);
             
             return {
                 fillColor: tractColor,
@@ -1604,7 +1950,7 @@
         // Get tract style based on current heatmap mode
         function getTractStyle(feature) {
             const value = getTractValue(feature);
-            const color = getTractColor(value);
+            const color = getTractColor(value, null, feature);
             
             return {
                 fillColor: color,
@@ -1637,6 +1983,7 @@
             // Create popup with tract information
             const tuition = parseInt(document.getElementById('tuition-slider').value);
             const enrollmentScore = calculateTractScore(feature, tuition);
+            
             const enrollmentContributions = calculateSchoolContributions(feature, tuition);
             const demoData = demographicData.get(geoid);
             const income = demoData ? demoData.median_hh_income : 0;
@@ -1842,6 +2189,7 @@
         function refreshMapColors() {
             // Clear tract score cache since tuition/multipliers changed
             tractScores.clear();
+            localPercentileCache.clear();
             
             // Refresh all loaded tract layers
             geojsonLayers.forEach((layer, state) => {
@@ -1968,6 +2316,17 @@
             
             console.log(`Switching to ${selectedMode} heatmap mode`);
             
+            // Show/hide enrollment bracket toggle based on mode
+            const enrollmentToggle = document.getElementById('enrollment-bracket-toggle');
+            const manualThresholds = document.getElementById('manual-enrollment-thresholds');
+            if (selectedMode === 'enrollment') {
+                enrollmentToggle.style.display = 'block';
+                manualThresholds.style.display = 'block';
+            } else {
+                enrollmentToggle.style.display = 'none';
+                manualThresholds.style.display = 'none';
+            }
+            
             // Calculate percentiles for current mode and loaded states
             calculatePercentiles();
             
@@ -1978,10 +2337,64 @@
             updateTractColorsForLoadedStates();
         }
         
+        // Switch enrollment bracket type (fixed vs percentiles)
+        function switchEnrollmentBracketType() {
+            const selectedType = document.querySelector('input[name="enrollment-bracket-type"]:checked').value;
+            enrollmentBracketType = selectedType;
+            
+            console.log(`Switching to ${selectedType} enrollment brackets`);
+            
+            // Show/hide percentile radius control
+            const radiusControl = document.getElementById('percentile-radius-control');
+            if (selectedType === 'percentiles') {
+                radiusControl.style.display = 'block';
+            } else {
+                radiusControl.style.display = 'none';
+            }
+            
+            // Clear local percentile cache when switching modes
+            localPercentileCache.clear();
+            
+            // If switching to percentiles and we're in enrollment mode, calculate percentiles
+            if (selectedType === 'percentiles' && currentHeatmapMode === 'enrollment') {
+                calculatePercentiles();
+            }
+            
+            // Update legend
+            updateLegend();
+            
+            // Recalculate colors for all loaded tracts if in enrollment mode
+            if (currentHeatmapMode === 'enrollment') {
+                updateTractColorsForLoadedStates();
+            }
+        }
+        
+        // Update percentile radius display only (no recalculation)
+        function updatePercentileRadiusDisplay() {
+            const slider = document.getElementById('percentile-radius-slider');
+            const valueDisplay = document.getElementById('percentile-radius-value');
+            
+            const newRadius = parseInt(slider.value);
+            valueDisplay.textContent = `${newRadius} miles`;
+        }
+        
+        // Apply percentile radius change (called during recalculation)
+        function applyPercentileRadiusChange() {
+            const slider = document.getElementById('percentile-radius-slider');
+            const newRadius = parseInt(slider.value);
+            
+            if (newRadius !== percentileRadius) {
+                percentileRadius = newRadius;
+                // Clear cache since radius changed
+                localPercentileCache.clear();
+                console.log(`Percentile radius updated to ${percentileRadius} miles`);
+            }
+        }
+        
         // Calculate percentiles for current loaded states and mode
         function calculatePercentiles() {
-            if (currentHeatmapMode === 'enrollment') {
-                // Enrollment mode uses fixed breakpoints, not percentiles
+            if (currentHeatmapMode === 'enrollment' && enrollmentBracketType === 'fixed') {
+                // Enrollment mode with fixed brackets doesn't need percentiles
                 return;
             }
             
@@ -1997,6 +2410,12 @@
                         if (demoData) {
                             let value = 0;
                             switch (currentHeatmapMode) {
+                                case 'enrollment':
+                                    // Calculate enrollment score for this tract
+                                    const tuition = document.getElementById('tuition-slider') ? 
+                                        parseInt(document.getElementById('tuition-slider').value) : 40000;
+                                    value = calculateTractScore(layer.feature, tuition);
+                                    break;
                                 case 'income':
                                     value = demoData.median_hh_income;
                                     break;
@@ -2044,33 +2463,100 @@
             
             switch (currentHeatmapMode) {
                 case 'enrollment':
-                    legendTitle.textContent = 'Enrollment Score Legend';
-                    legendItems.innerHTML = `
-                        <div class="legend-item">
-                            <span class="legend-color" style="background: #ff0000;"></span>
-                            <span>5000+ (Excellent)</span>
-                        </div>
-                        <div class="legend-item">
-                            <span class="legend-color" style="background: #ff8000;"></span>
-                            <span>3000-4999 (Very Good)</span>
-                        </div>
-                        <div class="legend-item">
-                            <span class="legend-color" style="background: #ffff00;"></span>
-                            <span>2500-2999 (Good)</span>
-                        </div>
-                        <div class="legend-item">
-                            <span class="legend-color" style="background: #80ff00;"></span>
-                            <span>1500-2499 (Fair)</span>
-                        </div>
-                        <div class="legend-item">
-                            <span class="legend-color" style="background: #00ffff;"></span>
-                            <span>500-1499 (Moderate)</span>
-                        </div>
-                        <div class="legend-item">
-                            <span class="legend-color" style="background: transparent; border: 1px solid #ccc;"></span>
-                            <span>0-499 (Low - No Color)</span>
-                        </div>
-                    `;
+                    const useManual = document.getElementById('use-manual-thresholds')?.checked;
+                    
+                    if (useManual) {
+                        // Manual thresholds
+                        const redThreshold = parseInt(document.getElementById('red-threshold')?.value || 5000);
+                        const orangeThreshold = parseInt(document.getElementById('orange-threshold')?.value || 3000);
+                        const yellowThreshold = parseInt(document.getElementById('yellow-threshold')?.value || 2500);
+                        const greenThreshold = parseInt(document.getElementById('green-threshold')?.value || 1500);
+                        const blueThreshold = parseInt(document.getElementById('blue-threshold')?.value || 500);
+                        
+                        legendTitle.textContent = 'Enrollment Score Legend (Manual Thresholds)';
+                        legendItems.innerHTML = `
+                            <div class="legend-item">
+                                <span class="legend-color" style="background: #ff0000;"></span>
+                                <span>${redThreshold.toLocaleString()}+ (Excellent)</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-color" style="background: #ff8000;"></span>
+                                <span>${orangeThreshold.toLocaleString()}-${(redThreshold-1).toLocaleString()} (Very Good)</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-color" style="background: #ffff00;"></span>
+                                <span>${yellowThreshold.toLocaleString()}-${(orangeThreshold-1).toLocaleString()} (Good)</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-color" style="background: #80ff00;"></span>
+                                <span>${greenThreshold.toLocaleString()}-${(yellowThreshold-1).toLocaleString()} (Fair)</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-color" style="background: #00ffff;"></span>
+                                <span>${blueThreshold.toLocaleString()}-${(greenThreshold-1).toLocaleString()} (Moderate)</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-color" style="background: transparent; border: 1px solid #ccc;"></span>
+                                <span>0-${(blueThreshold-1).toLocaleString()} (Low - No Color)</span>
+                            </div>
+                        `;
+                    } else if (enrollmentBracketType === 'fixed') {
+                        legendTitle.textContent = 'Enrollment Score Legend (Fixed Brackets)';
+                        legendItems.innerHTML = `
+                            <div class="legend-item">
+                                <span class="legend-color" style="background: #ff0000;"></span>
+                                <span>5000+ (Excellent)</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-color" style="background: #ff8000;"></span>
+                                <span>3000-4999 (Very Good)</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-color" style="background: #ffff00;"></span>
+                                <span>2500-2999 (Good)</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-color" style="background: #80ff00;"></span>
+                                <span>1500-2499 (Fair)</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-color" style="background: #00ffff;"></span>
+                                <span>500-1499 (Moderate)</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-color" style="background: transparent; border: 1px solid #ccc;"></span>
+                                <span>0-499 (Low - No Color)</span>
+                            </div>
+                        `;
+                    } else {
+                        legendTitle.textContent = `Enrollment Score Legend (Local Percentiles - ${percentileRadius} miles)`;
+                        legendItems.innerHTML = `
+                            <div class="legend-item">
+                                <span class="legend-color" style="background: #ff0000;"></span>
+                                <span>Top 20% (Excellent)</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-color" style="background: #ff8000;"></span>
+                                <span>60-80% (Very Good)</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-color" style="background: #ffff00;"></span>
+                                <span>40-60% (Good)</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-color" style="background: #80ff00;"></span>
+                                <span>20-40% (Fair)</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-color" style="background: #00ffff;"></span>
+                                <span>0-20% (Moderate)</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-color" style="background: #cccccc;"></span>
+                                <span>No Local Data</span>
+                            </div>
+                        `;
+                    }
                     break;
                     
                 case 'kids500k':
@@ -2337,12 +2823,25 @@
                     await loadStateTracts(stateAbbr);
                 }
                 
-                // Try to get tract information and scores
+                // Set up dynamic popup that recalculates on popup open
                 setTimeout(() => {
                     const tractInfo = getTractInfoAtLocation(lat, lng);
                     if (tractInfo) {
+                        // Create popup that updates content when opened
+                        const popup = L.popup();
+                        
+                        popup.on('popupopen', function() {
+                            const currentTractInfo = getTractInfoAtLocation(lat, lng);
+                            if (currentTractInfo) {
+                                const popupContent = createLocationPopup(result.display_name, currentTractInfo);
+                                popup.setContent(popupContent);
+                            }
+                        });
+                        
+                        // Set initial content and bind popup
                         const popupContent = createLocationPopup(result.display_name, tractInfo);
-                        marker.bindPopup(popupContent).openPopup();
+                        popup.setContent(popupContent);
+                        marker.bindPopup(popup).openPopup();
                         resultsDiv.innerHTML = `<span style="color: #28a745;">✓</span> Found: ${result.display_name}`;
                     } else {
                         resultsDiv.innerHTML = `<span style="color: #28a745;">✓</span> Found: ${result.display_name}<br><small>Load ${stateAbbr || 'state'} data to see tract scores</small>`;
@@ -2353,6 +2852,390 @@
                 console.error('Geocoding error:', error);
                 resultsDiv.textContent = 'Search failed. Please try again.';
             }
+        }
+
+        // Upload CSV with locations
+        async function uploadCSV() {
+            const fileInput = document.getElementById('csv-upload');
+            const resultsDiv = document.getElementById('csv-results');
+            
+            if (!fileInput.files.length) {
+                resultsDiv.textContent = 'Please select a CSV file';
+                return;
+            }
+            
+            const file = fileInput.files[0];
+            resultsDiv.textContent = 'Processing CSV...';
+            
+            try {
+                const text = await file.text();
+                const lines = text.split('\n').filter(line => line.trim());
+                
+                if (lines.length < 2) {
+                    resultsDiv.textContent = 'CSV file appears to be empty or invalid';
+                    return;
+                }
+                
+                // Parse CSV properly (handles commas in quoted fields)
+                function parseCSVLine(line) {
+                    const result = [];
+                    let current = '';
+                    let inQuotes = false;
+                    
+                    for (let i = 0; i < line.length; i++) {
+                        const char = line[i];
+                        
+                        if (char === '"') {
+                            inQuotes = !inQuotes;
+                        } else if (char === ',' && !inQuotes) {
+                            result.push(current.trim());
+                            current = '';
+                        } else {
+                            current += char;
+                        }
+                    }
+                    result.push(current.trim());
+                    return result;
+                }
+                
+                // Parse header
+                const headers = parseCSVLine(lines[0]).map(h => h.trim().toLowerCase().replace(/"/g, ''));
+                console.log('CSV Headers found:', headers);
+                
+                const nameIndex = headers.findIndex(h => h.includes('name'));
+                const addressIndex = headers.findIndex(h => h.includes('address'));
+                const latIndex = headers.findIndex(h => h.includes('lat'));
+                const lonIndex = headers.findIndex(h => h.includes('lon'));
+                
+                console.log('Column indices:', { nameIndex, addressIndex, latIndex, lonIndex });
+                
+                if (nameIndex === -1) {
+                    resultsDiv.textContent = 'CSV must contain a "name" column';
+                    return;
+                }
+                
+                if (addressIndex === -1 && (latIndex === -1 || lonIndex === -1)) {
+                    resultsDiv.textContent = 'CSV must contain either "address" or both "lat" and "lon" columns';
+                    return;
+                }
+                
+                resultsDiv.textContent = `Processing ${lines.length - 1} locations...`;
+                
+                let successCount = 0;
+                let errorCount = 0;
+                
+                // Process each row
+                for (let i = 1; i < lines.length; i++) {
+                    const row = parseCSVLine(lines[i]).map(cell => cell.trim().replace(/"/g, ''));
+                    
+                    if (row.length < headers.length) continue; // Skip incomplete rows
+                    
+                    const name = row[nameIndex] || `Location ${i}`;
+                    const address = addressIndex !== -1 ? row[addressIndex] : '';
+                    const latStr = latIndex !== -1 ? row[latIndex].trim() : '';
+                    const lonStr = lonIndex !== -1 ? row[lonIndex].trim() : '';
+                    
+                    // Debug first few rows
+                    if (i <= 3) {
+                        console.log(`Row ${i}:`, { name, address, latStr, lonStr, fullRow: row });
+                    }
+                    
+                    try {
+                        // Check if we have valid lat/lon strings before parsing
+                        if (latStr && lonStr && latStr !== '' && lonStr !== '') {
+                            const lat = parseFloat(latStr);
+                            const lon = parseFloat(lonStr);
+                            
+                            if (i <= 3) {
+                                console.log(`Parsed coordinates for ${name}:`, { lat, lon, isNaN_lat: isNaN(lat), isNaN_lon: isNaN(lon) });
+                            }
+                            
+                            if (!isNaN(lat) && !isNaN(lon)) {
+                                // Process synchronously for lat/lon data - NO GEOCODING
+                                processCSVLocationSync(name, address, lat, lon);
+                                successCount++;
+                            } else {
+                                // Invalid coordinates - skip this location
+                                console.warn(`Skipping location ${name}: invalid coordinates (lat: ${lat}, lon: ${lon})`);
+                                errorCount++;
+                            }
+                        } else {
+                            // No coordinates - skip this location  
+                            console.warn(`Skipping location ${name}: no coordinates provided (latStr: '${latStr}', lonStr: '${lonStr}')`);
+                            errorCount++;
+                        }
+                    } catch (error) {
+                        console.error(`Error processing location ${name}:`, error);
+                        errorCount++;
+                    }
+                    
+                    // Update progress
+                    if (i % 5 === 0 || i === lines.length - 1) {
+                        resultsDiv.textContent = `Processed ${i}/${lines.length - 1} locations...`;
+                    }
+                }
+                
+                resultsDiv.innerHTML = `<span style="color: #28a745;">✓</span> Uploaded ${successCount} locations${errorCount > 0 ? `, ${errorCount} failed` : ''}`;
+                
+                // Clear file input
+                fileInput.value = '';
+                
+            } catch (error) {
+                console.error('CSV processing error:', error);
+                resultsDiv.textContent = 'Error processing CSV file';
+            }
+        }
+
+        // Process CSV location synchronously (when lat/lon provided)
+        function processCSVLocationSync(name, address, lat, lon) {
+            const finalLat = parseFloat(lat);
+            const finalLon = parseFloat(lon);
+            const displayName = name;
+            
+            // Create a custom pin icon for uploaded locations
+            const pinIcon = L.divIcon({
+                className: 'custom-pin',
+                html: `<div style="
+                    background: #e74c3c;
+                    border-radius: 50% 50% 50% 0;
+                    width: 24px;
+                    height: 24px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-weight: bold;
+                    font-size: 12px;
+                    transform: rotate(-45deg);
+                    border: 2px solid white;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+                ">📌</div>`,
+                iconSize: [24, 24],
+                iconAnchor: [12, 24]
+            });
+            
+            // Add marker to map
+            const marker = L.marker([finalLat, finalLon], { icon: pinIcon }).addTo(map);
+            marker.originalName = displayName; // Store original name for refresh
+            uploadedMarkers.push(marker);
+            
+            // Get state abbreviation for reference (but don't auto-load)
+            const stateAbbr = getStateFromCoordinates(finalLat, finalLon);
+            
+            // Set up popup that updates content when opened
+            const popup = L.popup();
+            
+            popup.on('popupopen', function() {
+                const currentTractInfo = getTractInfoAtLocation(finalLat, finalLon);
+                if (currentTractInfo) {
+                    const popupContent = createLocationPopup(displayName, currentTractInfo);
+                    popup.setContent(popupContent);
+                } else {
+                    popup.setContent(`<div style="min-width: 200px;">
+                        <h4 style="margin: 0 0 10px 0; color: #333;">${displayName}</h4>
+                        <div style="font-size: 12px; color: #666;">
+                            Load ${stateAbbr || 'state'} data to see tract scores
+                        </div>
+                    </div>`);
+                }
+            });
+            
+            // Set initial popup content
+            const tractInfo = getTractInfoAtLocation(finalLat, finalLon);
+            if (tractInfo) {
+                const popupContent = createLocationPopup(displayName, tractInfo);
+                popup.setContent(popupContent);
+            } else {
+                popup.setContent(`<div style="min-width: 200px;">
+                    <h4 style="margin: 0 0 10px 0; color: #333;">${displayName}</h4>
+                    <div style="font-size: 12px; color: #666;">
+                        Load ${stateAbbr || 'state'} data to see tract scores
+                    </div>
+                </div>`);
+            }
+            
+            marker.bindPopup(popup);
+        }
+
+        // Process individual CSV location
+        async function processCSVLocation(name, address, lat, lon) {
+            let finalLat = lat;
+            let finalLon = lon;
+            let displayName = name;
+            
+            // Check if we have valid lat/lon coordinates first
+            if (lat !== null && lon !== null && !isNaN(lat) && !isNaN(lon) && lat !== '' && lon !== '') {
+                // Use provided coordinates - no geocoding needed!
+                finalLat = parseFloat(lat);
+                finalLon = parseFloat(lon);
+                displayName = name;
+            } else if (address && address.trim()) {
+                // Only geocode if no valid coordinates and we have an address
+                const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&countrycodes=us&limit=1`);
+                const data = await response.json();
+                
+                if (data.length === 0) {
+                    throw new Error('Address not found');
+                }
+                
+                finalLat = parseFloat(data[0].lat);
+                finalLon = parseFloat(data[0].lon);
+                displayName = name + ` (${address})`;
+                
+                // Add small delay to respect geocoding rate limits
+                await new Promise(resolve => setTimeout(resolve, 100));
+            } else {
+                throw new Error('No valid coordinates or address provided');
+            }
+            
+            // Create a custom pin icon for uploaded locations
+            const pinIcon = L.divIcon({
+                className: 'uploaded-pin',
+                html: `<div style="
+                    background: #17a2b8;
+                    color: white;
+                    border-radius: 50% 50% 50% 0;
+                    width: 24px;
+                    height: 24px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-weight: bold;
+                    font-size: 12px;
+                    transform: rotate(-45deg);
+                    border: 2px solid white;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+                ">📌</div>`,
+                iconSize: [24, 24],
+                iconAnchor: [12, 24]
+            });
+            
+            // Add marker to map
+            const marker = L.marker([finalLat, finalLon], { icon: pinIcon }).addTo(map);
+            marker.originalName = displayName; // Store original name for refresh
+            uploadedMarkers.push(marker);
+            
+            // Get state abbreviation for reference (but don't auto-load)
+            const stateAbbr = getStateFromCoordinates(finalLat, finalLon);
+            
+            // Set up popup that updates content when opened
+            const popup = L.popup();
+            
+            popup.on('popupopen', function() {
+                const currentTractInfo = getTractInfoAtLocation(finalLat, finalLon);
+                if (currentTractInfo) {
+                    const popupContent = createLocationPopup(displayName, currentTractInfo);
+                    popup.setContent(popupContent);
+                } else {
+                    popup.setContent(`<div style="min-width: 200px;">
+                        <h4 style="margin: 0 0 10px 0; color: #333;">${displayName}</h4>
+                        <div style="font-size: 12px; color: #666;">
+                            Load ${stateAbbr || 'state'} data to see tract scores
+                        </div>
+                    </div>`);
+                }
+            });
+            
+            // Set initial popup content
+            const tractInfo = getTractInfoAtLocation(finalLat, finalLon);
+            if (tractInfo) {
+                const popupContent = createLocationPopup(displayName, tractInfo);
+                popup.setContent(popupContent);
+            } else {
+                popup.setContent(`<div style="min-width: 200px;">
+                    <h4 style="margin: 0 0 10px 0; color: #333;">${displayName}</h4>
+                    <div style="font-size: 12px; color: #666;">
+                        Load ${stateAbbr || 'state'} data to see tract scores
+                    </div>
+                </div>`);
+            }
+            
+            marker.bindPopup(popup);
+        }
+
+        // Clear all uploaded pins
+        function clearUploadedPins() {
+            const resultsDiv = document.getElementById('csv-results');
+            
+            // Remove all uploaded markers from map
+            uploadedMarkers.forEach(marker => map.removeLayer(marker));
+            uploadedMarkers = [];
+            
+            resultsDiv.textContent = 'All uploaded pins cleared';
+            
+            // Clear the file input
+            const fileInput = document.getElementById('csv-upload');
+            fileInput.value = '';
+        }
+
+        // Toggle panel collapse/expand
+        function togglePanel() {
+            const mainPanel = document.getElementById('info-panel');
+            const miniPanel = document.getElementById('mini-panel');
+            
+            if (mainPanel.classList.contains('collapsed')) {
+                // Expand: Show main panel, hide mini panel
+                mainPanel.classList.remove('collapsed');
+                miniPanel.classList.remove('visible');
+                console.log('Panel expanded');
+            } else {
+                // Collapse: Hide main panel, show mini panel
+                mainPanel.classList.add('collapsed');
+                miniPanel.classList.add('visible');
+                console.log('Panel collapsed');
+            }
+        }
+
+        // Refresh all pin popups after recalculation
+        function refreshPinPopups() {
+            let refreshedCount = 0;
+            
+            // Refresh search markers
+            searchMarkers.forEach(marker => {
+                const popup = marker.getPopup();
+                if (popup) {
+                    // Get the marker's coordinates
+                    const latlng = marker.getLatLng();
+                    const tractInfo = getTractInfoAtLocation(latlng.lat, latlng.lng);
+                    
+                    if (tractInfo) {
+                        // Get the address from the existing popup content or use a default
+                        let address = 'Search Result';
+                        if (popup._content && typeof popup._content === 'string') {
+                            const match = popup._content.match(/<h4[^>]*>📍\s*([^<]+)<\/h4>/);
+                            if (match) {
+                                address = match[1].trim();
+                            }
+                        }
+                        
+                        // Update popup content with fresh data
+                        const newContent = createLocationPopup(address, tractInfo);
+                        popup.setContent(newContent);
+                        refreshedCount++;
+                    }
+                }
+            });
+            
+            // Refresh uploaded markers
+            uploadedMarkers.forEach(marker => {
+                const popup = marker.getPopup();
+                if (popup) {
+                    // Get the marker's coordinates
+                    const latlng = marker.getLatLng();
+                    const tractInfo = getTractInfoAtLocation(latlng.lat, latlng.lng);
+                    
+                    if (tractInfo) {
+                        // Use stored original name or fallback to default
+                        const displayName = marker.originalName || 'Uploaded Location';
+                        
+                        // Update popup content with fresh data
+                        const newContent = createLocationPopup(displayName, tractInfo);
+                        popup.setContent(newContent);
+                        refreshedCount++;
+                    }
+                }
+            });
+            
+            console.log(`Refreshed ${refreshedCount} pin popups after recalculation`);
         }
         
         // Get state abbreviation from coordinates (rough approximation)
@@ -2433,6 +3316,7 @@
             
             // Calculate all scores
             const enrollmentScore = calculateTractScore(tractFeature, tuition);
+            
             const demoData = demographicData.get(geoid);
             const income = demoData ? demoData.median_hh_income : 0;
             const homeValue = demoData ? demoData.median_home_value : 0;
@@ -2453,8 +3337,7 @@
             
             return `
                 <div style="min-width: 250px;">
-                    <h4 style="margin: 0 0 10px 0; color: #333;">📍 Search Result</h4>
-                    <div style="font-size: 12px; margin-bottom: 10px; color: #666;">${address}</div>
+                    <h4 style="margin: 0 0 10px 0; color: #333;">📍 ${address}</h4>
                     <div style="font-size: 11px; margin-bottom: 8px; color: #888;">Census Tract: ${geoid}</div>
                     
                     <div style="margin-bottom: 8px;">
